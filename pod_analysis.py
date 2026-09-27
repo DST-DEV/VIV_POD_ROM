@@ -20,11 +20,12 @@ needed (for now):
 from __future__ import annotations
 
 from pathlib import Path, PurePath
+from typing import Dict, Optional, Sequence, Tuple, Iterable
 
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")  # safe for headless / batch runs
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # noqa: E402
 
 # =============================================================================
 # User configuration
@@ -33,20 +34,22 @@ DATA_DIR = Path("./data/archive_1D")  # folder containing the data
 CASE = "a01_p85_i50"  # amplitude/pitch/inclination code, see data README
 U_WIND = 10  # free-stream wind speed [m/s] to analyse (6-22)
 
-FIELD = "fz"  # "fx", "fz", or "combined" -> which sectional force
-                # component(s) feed the POD. "fz" (flapwise) is the natural
-                # default for VIV.
+# Selection for which sectional force component(s) to consider in the POD.
+# "fx", "fz", or "combined"
+FIELD = "fx"
 
-N_SKIP = 400  # rows (time steps) dropped as initial transient
-                # Default (400) equals two full periods.
-N_LAST = None  # keep only the last N rows after N_SKIP;
-                # None = keep everything (recommended: run POD over several
-                # periods, not just the last one, so lock-in / beating
-                # behaviour is visible).
+# Rows (time steps) dropped as initial transient (Note: 200 is one full period)
+N_SKIP = 1200
+# Rows to keep after N_SKIP. If None: keep everything (recommended: run POD
+# over several periods, not just the last one, so lock-in / beating behaviour
+# is visible).
+N_LAST = None
 
 N_MODES_SHOW = 4  # number of leading POD modes to plot/report
 F_FORCING = 0.624  # [Hz] prescribed excitation frequency (cf. README)
 AMPLITUDE = 1.0  # motion amplitude factor A (cf. README, case a01)
+
+OUTPUT_DIR = Path(__file__).parent / "results" / "pod_test_single"
 
 # Motion polynomials from the README (highest power first), evaluated at
 # (y - 2.8)
@@ -210,7 +213,7 @@ def reconstruct(pod: dict, r: int):
     Parameters
     ----------
     pod : dict
-        Results of POD
+        Dictionary returned by :func:`compute_pod`.
     r : int
         Number of leading modes to use for the reconstruction
 
@@ -253,10 +256,245 @@ def dominant_frequency(signal: np.ndarray, dt: float) -> tuple:
 
 
 # =============================================================================
+# Plotting
+# =============================================================================
+def plot_energy_spectrum(pod: dict, out_dir: PurePath, n_show: int = 20
+                         ) -> None:
+    """
+    Plot the energy distribution of the leading POD modes.
+
+    Generates two figures: the energy fraction captured by each mode and the
+    cumulative energy captured by the leading modes. The figure is saved to
+    ``01_energy_spectrum.png``.
+
+    Parameters
+    ----------
+    pod : dict
+        Dictionary returned by :func:`compute_pod`.
+    out_dir : pathlib.PurePath
+        Directory where the figure will be written.
+    n_show : int, optional
+        Maximum number of POD modes to display. If greater than the available
+        number of modes, all modes are shown. Default is 20.
+
+    Returns
+    -------
+    None
+    """
+    n_show = min(n_show, len(pod["sigma"]))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
+
+    modes = np.arange(1, n_show + 1)
+    ax1.bar(modes, 100 * pod["energy_frac"][:n_show])
+    ax1.set_xlabel("POD mode")
+    ax1.set_ylabel("Energy fraction [%]")
+    ax1.set_title("Energy per mode")
+
+    ax2.plot(modes, 100 * pod["cum_energy"][:n_show], "o-")
+    ax2.axhline(99, color="gray", ls="--", lw=1)
+    ax2.set_xlabel("Number of modes")
+    ax2.set_ylabel("Cumulative energy [%]")
+    ax2.set_title("Cumulative energy")
+
+    fig.tight_layout()
+    fig.savefig(out_dir / "01_energy_spectrum.png", dpi=150)
+    plt.close(fig)
+
+
+def plot_spatial_modes(y: np.ndarray, pod: dict, field_info: dict,
+                       out_dir: PurePath, n_show: int = 4) -> None:
+    """
+    Plot the leading spatial POD modes.
+
+    For a single force component, the leading spatial modes are plotted on a
+    single axis. For a combined Fx/Fz decomposition, the spatial modes are
+    split back into their respective components using the stored scaling
+    factors and displayed on separate axes.
+
+    Parameters
+    ----------
+    y : ndarray of shape (n_sections,)
+        Spanwise station coordinates.
+    pod : dict
+        Dictionary returned by :func:`compute_pod`.
+    field_info : dict
+        Metadata returned by :func:`build_field_matrix` describing whether the
+        POD was performed on a single component or on the combined field.
+    out_dir : pathlib.PurePath
+        Directory where the figure will be saved.
+    n_show : int, optional
+        Number of leading modes to plot. Default is 4.
+
+    Returns
+    -------
+    None
+    """
+    n_show = min(n_show, pod["modes"].shape[1])
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    if field_info["kind"] == "single":
+        for k in range(n_show):
+            ax.plot(y, pod["modes"][:, k],
+                    label=f"mode {k+1} ({100*pod['energy_frac'][k]:.1f}%)")
+        ax.set_ylabel(f"{field_info['component']} mode shape [-]")
+    else:  # combined
+        n = field_info["n"]
+        fig, (ax, ax2) = plt.subplots(1, 2, figsize=(11, 5), sharex=True)
+        for k in range(n_show):
+            phi = pod["modes"][:, k]
+            lbl = f"mode {k+1} ({100*pod['energy_frac'][k]:.1f}%)"
+            ax.plot(y, phi[:n] * field_info["scale_x"], label=lbl)
+            ax2.plot(y, phi[n:] * field_info["scale_z"], label=lbl)
+        ax2.set_xlabel("Spanwise station y [m]")
+        ax2.set_ylabel("Fz-part mode shape [N/m, rescaled]")
+        ax2.set_title("Flapwise (Fz) component")
+        ax2.legend(fontsize=8)
+        ax.set_ylabel("Fx-part mode shape [N/m, rescaled]")
+        ax.set_title("Edgewise (Fx) component")
+
+    ax.set_xlabel("Spanwise station y [m]")
+    ax.set_title("Leading POD spatial modes"
+                 if field_info["kind"] == "single" else ax.get_title())
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_dir / "02_spatial_modes.png", dpi=150)
+    plt.close(fig)
+
+
+def plot_temporal_coefficients(t: np.ndarray, pod: dict, dt: float,
+                               f_forcing: float, out_dir: PurePath,
+                               n_show: int = 4) -> None:
+    """
+    Plot POD temporal coefficients and their frequency spectra.
+
+    For each leading POD mode, the temporal coefficient is plotted together
+    with its FFT magnitude spectrum. The prescribed forcing frequency and the
+    dominant spectral peak are highlighted.
+
+    Parameters
+    ----------
+    t : ndarray of shape (n_snapshots,)
+        Time vector.
+    pod : dict
+        Dictionary returned by :func:`compute_pod`.
+    dt : float
+        Constant sampling interval.
+    f_forcing : float
+        Prescribed excitation frequency in Hz.
+    out_dir : pathlib.PurePath
+        Directory where the figure will be saved.
+    n_show : int, optional
+        Number of leading modes to visualize. Default is 4.
+
+    Returns
+    -------
+    None
+    """
+    n_show = min(n_show, pod["time_coeff"].shape[0])
+    fig, axes = plt.subplots(n_show, 2, figsize=(11, 2.4 * n_show),
+                             squeeze=False)
+
+    for k in range(n_show):
+        a_k = pod["time_coeff"][k, :]
+        f_dom, freqs, amp = dominant_frequency(a_k, dt)
+
+        axes[k, 0].plot(t, a_k)
+        axes[k, 0].set_ylabel(f"a_{k+1}(t)")
+        axes[k, 0].set_title(f"Mode {k+1} time coefficient "
+                             f"({100*pod['energy_frac'][k]:.1f}% energy)")
+
+        axes[k, 1].plot(freqs, amp)
+        axes[k, 1].axvline(f_forcing, color="r", ls="--", lw=1,
+                           label="Forcing f")
+        axes[k, 1].axvline(f_dom, color="g", ls=":", lw=1.5,
+                           label="Dominant peak")
+        axes[k, 1].set_xlim(0, max(6 * f_forcing, 2 * f_dom, 1e-6))
+        axes[k, 1].set_title(f"Spectrum (peak = {f_dom:.3f} Hz, "
+                             f"{f_dom / f_forcing:.2f} x forcing)")
+        axes[k, 1].legend(fontsize=7)
+
+    axes[-1, 0].set_xlabel("Time [s]")
+    axes[-1, 1].set_xlabel("Frequency [Hz]")
+    fig.tight_layout()
+    fig.savefig(out_dir / "03_temporal_coefficients.png", dpi=150)
+    plt.close(fig)
+
+
+def plot_reconstruction(y: np.ndarray, t: np.ndarray, D_full: np.ndarray,
+                        pod: dict, station: int = 0,
+                        r_values: Iterable[int] = (1, 2, 4),
+                        out_dir: Optional[Path] = None
+                        ) -> Tuple[plt.Figure, Tuple[plt.Axes]]:
+    """
+    Compare POD reconstructions using different truncation levels.
+
+    The reconstruction quality is assessed by comparing the original field
+    with truncated POD reconstructions. Two comparisons are shown: the time
+    history at the specified spanwise position and the spanwise distribution
+    at the final snapshot.
+
+
+    Parameters
+    ----------
+    y : ndarray of shape (n_sections,)
+        Spanwise station coordinates.
+    t : ndarray of shape (n_snapshots,)
+        Time vector.
+    D_full : ndarray of shape (n_snapshots, n_sections)
+        Original field used for comparison.
+    pod : dict
+        Dictionary returned by :func:`compute_pod`.
+    station : int, optional
+        Index of the spanwise station to plot the orbit for. Default is
+        ``0`` (the blade root).
+    r_values : iterable of int, optional
+        Numbers of POD modes used for the truncated reconstructions.
+        Default is ``(1, 2, 4)``.
+    out_dir : pathlib.Path, optional
+        Directory the figure is saved to. If ``None``, the
+        figure is not saved to disk (only returned).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure.
+    axs : Tuple[matplotlib.axes.Axes]
+        The axes containing the orbit plot.
+    """
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
+
+    ax1.plot(t, D_full.T[station, :], "k", lw=1.5, label="original")
+    ax2.plot(y, D_full.T[:, -1], "k", lw=1.5, label="original")
+
+    for r in r_values:
+        D_rec = reconstruct(pod, r)
+        ax1.plot(t, D_rec[station, :], lw=1, label=f"{r} mode(s)")
+        ax2.plot(y, D_rec[:, -1], lw=1, label=f"{r} mode(s)")
+
+    ax1.set_xlabel("Time [s]")
+    ax1.set_ylabel("Force [N/m] at specified station")
+    ax1.set_title("Reconstruction quality (time series)")
+    ax1.legend(fontsize=8)
+
+    ax2.set_xlabel("Spanwise station y [m]")
+    ax2.set_ylabel("Force [N/m] at last time step")
+    ax2.set_title("Reconstruction quality (spanwise, last snapshot)")
+    ax2.legend(fontsize=8)
+
+    fig.tight_layout()
+    if out_dir is not None:
+        fig.savefig(Path(out_dir) / "04_reconstruction_check.png", dpi=150)
+
+    return fig, (ax1, ax2)
+
+# =============================================================================
 # Main execution
 # =============================================================================
 def main():
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
     hy_path = DATA_DIR / f"{CASE}_u{U_WIND}.1HY"
+    work_path = DATA_DIR / f"{CASE}_u{U_WIND}.1work"
 
     print(f"Loading {hy_path} ...")
     y, t, Fx, Fz = load_hy(hy_path, n_skip=N_SKIP, n_last=N_LAST)
@@ -266,21 +504,39 @@ def main():
           f"spanning ~{n_periods:.1f} forcing periods")
     print(f"  {len(y)} spanwise stations, y = {y[0]:.1f} to {y[-1]:.1f} m")
 
-    field, field_info = build_field_matrix(Fx, Fz, FIELD)
-    pod = compute_pod(field)
+    field, field_info = build_field_matrix(Fx=Fx, Fz=Fz, mode=FIELD)
+    pod = compute_pod(field=field)
 
     n_report = min(N_MODES_SHOW, len(pod["sigma"]))
     print(f"\n--- POD summary (field = '{FIELD}') ---")
     print(f"{'mode':>4} {'energy %':>10} {'cum %':>8} "
           f"{'dom. freq [Hz]':>15}r {'freq / f_forcing':>17}")
     for k in range(n_report):
-        f_dom, _, _ = dominant_frequency(pod["time_coeff"][k, :], dt)
+        f_dom, _, _ = dominant_frequency(signal=pod["time_coeff"][k, :], dt=dt)
         print(f"{k+1:>4} {100*pod['energy_frac'][k]:>10.2f} "
               f"{100*pod['cum_energy'][k]:>8.2f} {f_dom:>15.4f} "
               f"{f_dom / F_FORCING:>17.3f}")
 
     n99 = int(np.searchsorted(pod["cum_energy"], 0.99) + 1)
     print(f"\nModes needed to capture 99% of the fluctuation energy: {n99}")
+
+    plot_energy_spectrum(pod=pod, out_dir=OUTPUT_DIR)
+    plot_spatial_modes(y=y, pod=pod, field_info=field_info,
+                       out_dir=OUTPUT_DIR, n_show=N_MODES_SHOW)
+    plot_temporal_coefficients(t=t, pod=pod, dt=dt, f_forcing=F_FORCING,
+                               out_dir=OUTPUT_DIR, n_show=N_MODES_SHOW)
+
+    # For the reconstruction check, use whichever raw field matches FIELD
+    # ("combined" mixes units, so default the sanity-check plot to Fz).
+    D_full_check = Fz if FIELD != "fx" else Fx
+    pod_check = pod if field_info["kind"] == "single" \
+        else compute_pod(D_full_check)
+    idx_onethird = np.where(y >= y[-1]/3)[0][0]
+    plot_reconstruction(y=y, t=t, D_full=D_full_check, pod=pod_check,
+                        station=idx_onethird, out_dir=OUTPUT_DIR)
+
+    print(f"\nFigures written to: {OUTPUT_DIR.resolve()}")
+
 
 if __name__ == "__main__":
     main()

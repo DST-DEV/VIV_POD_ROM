@@ -8,6 +8,8 @@
 /.vscode/
 /.venv/
 /data/
+/results/
+/figures/
 *.tar.gz
 
 # Byte-compiled / optimized / DLL files
