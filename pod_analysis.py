@@ -49,6 +49,8 @@ N_MODES_SHOW = 4  # number of leading POD modes to plot/report
 F_FORCING = 0.624  # [Hz] prescribed excitation frequency (cf. README)
 AMPLITUDE = 1.0  # motion amplitude factor A (cf. README, case a01)
 
+DO_POWER_CHECK = True  # optional physical cross-check, see section 5
+
 OUTPUT_DIR = Path(__file__).parent / "results" / "pod_test_single"
 
 # Motion polynomials from the README (highest power first), evaluated at
@@ -593,6 +595,110 @@ def plot_force_orbit(t: np.ndarray, Fx: np.ndarray, Fz: np.ndarray,
 
     return fig, ax
 
+
+# =============================================================================
+# Physical cross-check
+# =============================================================================
+def power_correlation_check(y: np.ndarray, t: np.ndarray, Fx: np.ndarray,
+                            Fz: np.ndarray, pod: dict, out_dir: PurePath,
+                            amplitude: float = AMPLITUDE,
+                            omega: float = 2 * np.pi * F_FORCING,
+                            n_modes: int = 4,
+                            work_file: None | PurePath = None):
+    """
+    Correlate aerodynamic power with the leading POD temporal coefficients.
+
+    Computes the instantaneous aerodynamic power transferred from the fluid to
+    the prescribed blade motion using the sectional force distributions and
+    prescribed motion kinematics. The total power is correlated with the
+    leading POD temporal coefficients to identify modes associated with energy
+    transfer. Optionally compares the computed mean power with data from a
+    ``*.1work`` file.
+
+    Parameters
+    ----------
+    y : ndarray of shape (n_sections,)
+        Spanwise station coordinates.
+    t : ndarray of shape (n_snapshots,)
+        Time vector.
+    Fx : ndarray of shape (n_snapshots, n_sections)
+        Edgewise sectional force.
+    Fz : ndarray of shape (n_snapshots, n_sections)
+        Flapwise sectional force.
+    pod : dict
+        Dictionary returned by :func:`compute_pod`.
+    out_dir : pathlib.PurePath
+        Directory where output figures are written.
+    amplitude : float, optional
+        Blade motion amplitude scaling factor.
+    omega : float, optional
+        Angular excitation frequency in rad/s.
+    n_show : int, optional
+        Number of leading modes to consider for the correlation calculation.
+        Default is 4.
+    work_file : pathlib.PurePath or None, optional
+        Solver-generated ``*.1work`` file used for validation of the computed
+        aerodynamic power. If ``None`` or the file does not exist, no
+        comparison is performed.
+
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    The instantaneous aerodynamic power is computed by integrating the
+    sectional power density along the blade span,
+
+    ``P(t) = ∫ (Fx * vx + Fz * vz) dy``,
+
+    where the prescribed blade velocities are obtained from the motion
+    polynomials defined in the simulation setup.
+    """
+    vx = np.polyval(COEFF_X, y - 2.8) * amplitude * omega \
+        * np.cos(omega * t)[:, None]
+    vz = np.polyval(COEFF_Z, y - 2.8) * amplitude * omega \
+        * np.cos(omega * t)[:, None]
+    # p_sectional = Fx * vx + Fz * vz  # [W/m] Instantaneous power
+    p_sectional = Fx * vx  # [W/m] Instantaneous power
+    P_total = np.trapezoid(p_sectional, y, axis=1)  # [W] Power per time step
+
+    print("\n--- Physical power cross-check ---")
+    print(f"Mean input power (from Fx, Fz, and prescribed velocity): "
+          f"{P_total.mean():.4g} W  "
+          f"({'exciting' if P_total.mean() > 0 else 'damping'} the motion)")
+
+    if work_file is not None and work_file.exists():
+        wk = np.loadtxt(work_file, comments="#")
+        dt = t[1] - t[0]
+        n = min(len(wk), len(P_total))
+        P_work = wk[-n:, 2] / dt  # wx column -> power
+        print("Mean power from *.1work file (cross-check): "
+              f"{P_work.mean():.4g} W")
+    else:
+        print("(*.1work file not found/skipped. No cross-check against "
+              "solver output)")
+
+    corr = [np.corrcoef(P_total, pod["time_coeff"][k, :])[0, 1]
+            for k in range(min(n_modes, pod["time_coeff"].shape[0]))]
+    print("Correlation of each leading POD mode's a_k(t) with instantaneous "
+          "power:")
+    for k, c in enumerate(corr, start=1):
+        print(f"  mode {k}: r = {c:+.3f}")
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(t, P_total, "k", label="instantaneous power P(t)")
+    ax2 = ax.twinx()
+    ax2.plot(t, pod["time_coeff"][0, :], "C0", label="a_1(t)")
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Power [W]")
+    ax2.set_ylabel("a_1(t)", color="C0")
+    ax.set_title("Aerodynamic power vs. leading POD temporal coefficient")
+    fig.tight_layout()
+    fig.savefig(out_dir / "06_power_vs_mode1.png", dpi=150)
+    plt.close(fig)
+
+
 # =============================================================================
 # Main execution
 # =============================================================================
@@ -646,6 +752,10 @@ def main():
                          station=idx_onethird,
                          r_values=(2, 4),
                          out_dir=OUTPUT_DIR)
+
+    if DO_POWER_CHECK:
+        power_correlation_check(y=y, t=t, Fx=Fx, Fz=Fz, pod=pod, n_modes=n99,
+                                out_dir=OUTPUT_DIR, work_file=work_path)
 
     print(f"\nFigures written to: {OUTPUT_DIR.resolve()}")
 
