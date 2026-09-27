@@ -487,6 +487,112 @@ def plot_reconstruction(y: np.ndarray, t: np.ndarray, D_full: np.ndarray,
 
     return fig, (ax1, ax2)
 
+
+def plot_force_orbit(t: np.ndarray, Fx: np.ndarray, Fz: np.ndarray,
+                     pod: Dict, field_info: Dict, station: int = 0,
+                     r_values: Sequence[int] = (2, 4),
+                     out_dir: Optional[Path] = None
+                     ) -> Tuple[plt.Figure, plt.Axes]:
+    """Plot the sectional-force orbit (Fx vs. Fz trajectory) at one station.
+
+    At a fixed spanwise station the instantaneous sectional force is a 2-D
+    vector (Fx(t), Fz(t)). Tracing this vector's tip over time gives a
+    force "orbit" -- a line, ellipse or more complex (e.g. figure-of-eight)
+    loop whose shape reflects the coupling between edgewise and flapwise
+    loading, which is characteristic of vortex-induced-vibration behaviour.
+    This function overlays the orbit from the original data with the
+    orbit(s) reconstructed from a truncated POD basis, so that the number
+    of modes needed to reproduce the orbit's shape can be assessed. It
+    requires a POD computed on the *combined* Fx/Fz field (i.e. the ``pod``
+    and ``field_info`` returned by ``compute_pod`` and ``build_field_matrix``
+    with ``mode="combined"``), since only then do the POD modes carry
+    information about both force components jointly.
+
+    Parameters
+    ----------
+    t : np.ndarray of shape (n_snapshots,)
+        Time vector, shape ``(n_snapshots,)``, in seconds. Used to colour
+        the original orbit by time so the direction of travel is visible.
+    Fx : np.ndarray of shape (n_snapshots, n_sections)
+        Original edgewise sectional force.
+    Fz : np.ndarray of shape (n_snapshots, n_sections)
+        Original flapwise sectional force.
+    pod : dict of {str : np.ndarray}
+        POD decomposition returned by :func:`compute_pod`, computed on the
+        combined field built by
+        ``build_field_matrix(Fx, Fz, mode="combined")``.
+    field_info : dict of {str : Any}
+        Metadata returned alongside the combined field by
+        :func:`build_field_matrix`. Must have ``field_info["kind"] ==
+        "combined"`` and provide ``"n"``, ``"scale_x"`` and ``"scale_z"``.
+    station : int, optional
+        Index of the spanwise station to plot the orbit for. Default is
+        ``0`` (the blade root).
+    r_values : Sequence[int], optional
+        Numbers of leading POD modes to include in the reconstructed
+        orbit(s) overlaid for comparison. Default is ``(2, 4)``.
+    out_dir : pathlib.Path, optional
+        Directory the figure is saved to. If ``None``, the
+        figure is not saved to disk (only returned).
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure.
+    ax : matplotlib.axes.Axes
+        The axes containing the orbit plot.
+
+    Raises
+    ------
+    ValueError
+        If ``field_info["kind"]`` is not ``"combined"``.
+
+    Notes
+    -----
+    The combined POD field stacks the (standardised) Fx and Fz snapshot
+    matrices column-wise, so a reconstruction with ``r`` modes,
+    ``D_rec = reconstruct(pod, r)``, has its first ``field_info["n"]`` rows
+    corresponding to the (rescaled) Fx component and the remaining rows to
+    the Fz component; this function performs that split and the rescaling
+    by ``field_info["scale_x"]`` / ``field_info["scale_z"]`` internally.
+    """
+    if field_info.get("kind") != "combined":
+        raise ValueError(
+            "plot_force_orbit requires a POD computed on the combined "
+            "Fx/Fz field (field_info['kind'] == 'combined')."
+        )
+
+    n = field_info["n"]
+    sx = field_info["scale_x"]
+    sz = field_info["scale_z"]
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    # Original orbit at the chosen station, coloured by time to show
+    # the direction/rate of travel around the loop.
+    sc = ax.scatter(Fx[:, station], Fz[:, station], c=t, cmap="viridis",
+                    s=8, label="original")
+    fig.colorbar(sc, ax=ax, label="time [s]")
+
+    # POD-reconstructed orbit(s) for comparison.
+    for r in r_values:
+        D_rec = reconstruct(pod, r)  # (2*n, n_snapshots), combined units
+        Fx_rec = D_rec[:n, :][station, :] * sx
+        Fz_rec = D_rec[n:, :][station, :] * sz
+        ax.plot(Fx_rec, Fz_rec, lw=1.2, alpha=.8, label=f"{r} mode(s)")
+
+    ax.set_xlabel("Fx [N/m] (edgewise)")
+    ax.set_ylabel("Fz [N/m] (flapwise)")
+    ax.set_title(f"Sectional-force orbit at station index {station}")
+    ax.set_aspect("equal", adjustable="box")
+    ax.legend(fontsize=8, loc="best")
+    fig.tight_layout()
+
+    if out_dir is not None:
+        fig.savefig(Path(out_dir) / "05_force_orbit.png", dpi=150)
+
+    return fig, ax
+
 # =============================================================================
 # Main execution
 # =============================================================================
@@ -534,6 +640,12 @@ def main():
     idx_onethird = np.where(y >= y[-1]/3)[0][0]
     plot_reconstruction(y=y, t=t, D_full=D_full_check, pod=pod_check,
                         station=idx_onethird, out_dir=OUTPUT_DIR)
+
+    if field_info["kind"] == "combined":
+        plot_force_orbit(t=t, Fx=Fx, Fz=Fz, pod=pod, field_info=field_info,
+                         station=idx_onethird,
+                         r_values=(2, 4),
+                         out_dir=OUTPUT_DIR)
 
     print(f"\nFigures written to: {OUTPUT_DIR.resolve()}")
 
