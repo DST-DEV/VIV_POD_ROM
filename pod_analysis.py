@@ -36,7 +36,7 @@ U_WIND = 10  # free-stream wind speed [m/s] to analyse (6-22)
 
 # Selection for which sectional force component(s) to consider in the POD.
 # "fx", "fz", or "combined"
-FIELD = "fx"
+FIELD = "combined"
 
 # Rows (time steps) dropped as initial transient (Note: 200 is one full period)
 N_SKIP = 1200
@@ -51,7 +51,7 @@ AMPLITUDE = 1.0  # motion amplitude factor A (cf. README, case a01)
 
 DO_POWER_CHECK = True  # optional physical cross-check, see section 5
 
-OUTPUT_DIR = Path(__file__).parent / "results" / "pod_test_single"
+OUTPUT_DIR = Path(__file__).parent / "results" / "pod_test_single" / "pod"
 
 # Motion polynomials from the README (highest power first), evaluated at
 # (y - 2.8)
@@ -68,7 +68,7 @@ COEFF_Z = np.array([-7.37789434610509e-14, 1.96005460184524e-11,
 # Data loading
 # =============================================================================
 def load_hy(path: PurePath, n_skip: int = 0, n_last: None | int = None
-            ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+            ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Load a *.1HY sectional-force file.
 
     Expected file layout (see README of simulations):
@@ -93,13 +93,13 @@ def load_hy(path: PurePath, n_skip: int = 0, n_last: None | int = None
 
     Returns
     -------
-    y : ndarray of shape (n_sections,)
+    y : ndarray, shape (n_sections,)
         Spanwise coordinate [m]
     t : (n_rows,)
         Time [s] (absolute simulation time)
-    Fx : ndarray of shape (n_rows, n_sections)
+    Fx : ndarray, shape (n_rows, n_sections)
         Edgewise sectional force [N/m]
-    Fz : ndarray of shape (n_rows, n_sections)
+    Fz : ndarray, shape (n_rows, n_sections)
         Flapwise sectional force [N/m]
     """
     data = np.loadtxt(path, comments="#")
@@ -118,14 +118,15 @@ def load_hy(path: PurePath, n_skip: int = 0, n_last: None | int = None
     return y, t, Fx, Fz
 
 
-def build_field_matrix(Fx, Fz, mode):
+def build_field_matrix(Fx: np.ndarray, Fz: np.ndarray, mode: str
+                       ) -> Tuple[np.ndarray, dict]:
     """Build the (n_snapshots, n_points) matrix POD will be applied to.
 
     Parameters
     ----------
-    Fx : ndarray of shape (n_rows, n_sections)
+    Fx : ndarray, shape (n_rows, n_sections)
         The force time series in x-direction.
-    Fz : ndarray of shape (n_rows, n_sections)
+    Fz : ndarray, shape (n_rows, n_sections)
         The force time series in z-direction.
     mode : str
         Which force time series should be considered
@@ -137,10 +138,11 @@ def build_field_matrix(Fx, Fz, mode):
 
     Returns
     -------
-    ndarray
-        The field array plus a small dict describing how to interpret / invert
-        the scaling when a "combined" spatial mode is split back into its
-        Fx- and Fz- parts for plotting.
+    field_array: np.ndarray
+        The field array containing the data for the selected mode
+    field_info: dict
+        Description of how to interpret / invert the scaling when a "combined"
+        spatial mode is split back into its Fx- and Fz- parts for plotting.
     """
     if mode == "fx":
         return Fx, {"kind": "single", "component": "Fx"}
@@ -165,7 +167,7 @@ def compute_pod(field: np.ndarray) -> dict:
 
     Parameters
     ----------
-    field : ndarray of shape (n_snapshots, n_points)
+    field : ndarray, shape (n_snapshots, n_points)
         Snapshot matrix. Rows are time snapshots, columns are spatial points
         (e.g. spanwise stations)
 
@@ -287,16 +289,18 @@ def plot_energy_spectrum(pod: dict, out_dir: PurePath, n_show: int = 20
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4))
 
     modes = np.arange(1, n_show + 1)
-    ax1.bar(modes, 100 * pod["energy_frac"][:n_show])
+    ax1.bar(modes, 100 * pod["energy_frac"][:n_show], zorder=10)
     ax1.set_xlabel("POD mode")
     ax1.set_ylabel("Energy fraction [%]")
     ax1.set_title("Energy per mode")
+    ax1.grid(alpha=.8, zorder=0)
 
     ax2.plot(modes, 100 * pod["cum_energy"][:n_show], "o-")
     ax2.axhline(99, color="gray", ls="--", lw=1)
     ax2.set_xlabel("Number of modes")
     ax2.set_ylabel("Cumulative energy [%]")
     ax2.set_title("Cumulative energy")
+    ax2.grid(alpha=.8, zorder=0)
 
     fig.tight_layout()
     fig.savefig(out_dir / "01_energy_spectrum.png", dpi=150)
@@ -315,7 +319,7 @@ def plot_spatial_modes(y: np.ndarray, pod: dict, field_info: dict,
 
     Parameters
     ----------
-    y : ndarray of shape (n_sections,)
+    y : ndarray, shape (n_sections,)
         Spanwise station coordinates.
     pod : dict
         Dictionary returned by :func:`compute_pod`.
@@ -339,6 +343,20 @@ def plot_spatial_modes(y: np.ndarray, pod: dict, field_info: dict,
             ax.plot(y, pod["modes"][:, k],
                     label=f"mode {k+1} ({100*pod['energy_frac'][k]:.1f}%)")
         ax.set_ylabel(f"{field_info['component']} mode shape [-]")
+        ax.grid(alpha=.8, zorder=0)
+
+        if field_info["component"] == "Fx":
+            modeshape = np.polyval(COEFF_X, y - 2.8)
+            modeshape /= np.max(modeshape)
+        elif field_info["component"] == "Fz":
+            modeshape = np.polyval(COEFF_Z, y - 2.8)
+            modeshape /= np.max(modeshape)
+
+        if modeshape is not None:
+            ax_twin = ax.twinx()
+            ax_twin.plot(y, modeshape, c="k", ls="--",
+                         label="Forced motion modeshape")
+            ax_twin.set_ylabel("Forced motion modeshape [-]")
     else:  # combined
         n = field_info["n"]
         fig, (ax, ax2) = plt.subplots(1, 2, figsize=(11, 5), sharex=True)
@@ -353,6 +371,23 @@ def plot_spatial_modes(y: np.ndarray, pod: dict, field_info: dict,
         ax2.legend(fontsize=8)
         ax.set_ylabel("Fx-part mode shape [N/m, rescaled]")
         ax.set_title("Edgewise (Fx) component")
+
+        ax.grid(alpha=.8, zorder=0)
+        ax2.grid(alpha=.8, zorder=0)
+
+        modeshape_x = np.polyval(COEFF_X, y - 2.8)
+        modeshape_x /= np.max(modeshape_x)
+        ax1_twin = ax.twinx()
+        ax1_twin.plot(y, modeshape_x, c="k", ls="--",
+                      label="Forced motion modeshape")
+        ax1_twin.set_ylabel("Forced motion modeshape [-]")
+
+        modeshape_z = np.polyval(COEFF_Z, y - 2.8)
+        modeshape_z /= np.max(modeshape_z)
+        ax2_twin = ax2.twinx()
+        ax2_twin.plot(y, modeshape_z, c="k", ls="--",
+                      label="Forced motion modeshape")
+        ax2_twin.set_ylabel("Forced motion modeshape [-]")
 
     ax.set_xlabel("Spanwise station y [m]")
     ax.set_title("Leading POD spatial modes"
@@ -375,7 +410,7 @@ def plot_temporal_coefficients(t: np.ndarray, pod: dict, dt: float,
 
     Parameters
     ----------
-    t : ndarray of shape (n_snapshots,)
+    t : ndarray, shape (n_snapshots,)
         Time vector.
     pod : dict
         Dictionary returned by :func:`compute_pod`.
@@ -404,6 +439,7 @@ def plot_temporal_coefficients(t: np.ndarray, pod: dict, dt: float,
         axes[k, 0].set_ylabel(f"a_{k+1}(t)")
         axes[k, 0].set_title(f"Mode {k+1} time coefficient "
                              f"({100*pod['energy_frac'][k]:.1f}% energy)")
+        axes[k, 0].grid(alpha=.8, zorder=0)
 
         axes[k, 1].plot(freqs, amp)
         axes[k, 1].axvline(f_forcing, color="r", ls="--", lw=1,
@@ -414,6 +450,7 @@ def plot_temporal_coefficients(t: np.ndarray, pod: dict, dt: float,
         axes[k, 1].set_title(f"Spectrum (peak = {f_dom:.3f} Hz, "
                              f"{f_dom / f_forcing:.2f} x forcing)")
         axes[k, 1].legend(fontsize=7)
+        axes[k, 1].grid(alpha=.8, zorder=0)
 
     axes[-1, 0].set_xlabel("Time [s]")
     axes[-1, 1].set_xlabel("Frequency [Hz]")
@@ -423,7 +460,7 @@ def plot_temporal_coefficients(t: np.ndarray, pod: dict, dt: float,
 
 
 def plot_reconstruction(y: np.ndarray, t: np.ndarray, D_full: np.ndarray,
-                        pod: dict, station: int = 0,
+                        pod: dict, field_info: dict, station: int = 0,
                         r_values: Iterable[int] = (1, 2, 4),
                         out_dir: Optional[Path] = None
                         ) -> Tuple[plt.Figure, Tuple[plt.Axes]]:
@@ -438,14 +475,17 @@ def plot_reconstruction(y: np.ndarray, t: np.ndarray, D_full: np.ndarray,
 
     Parameters
     ----------
-    y : ndarray of shape (n_sections,)
+    y : ndarray, shape (n_sections,)
         Spanwise station coordinates.
-    t : ndarray of shape (n_snapshots,)
+    t : ndarray, shape (n_snapshots,)
         Time vector.
-    D_full : ndarray of shape (n_snapshots, n_sections)
+    D_full : ndarray, shape (n_snapshots, n_sections)
         Original field used for comparison.
     pod : dict
         Dictionary returned by :func:`compute_pod`.
+    field_info : dict
+        Metadata returned by :func:`build_field_matrix` describing whether the
+        POD was performed on a single component or on the combined field.
     station : int, optional
         Index of the spanwise station to plot the orbit for. Default is
         ``0`` (the blade root).
@@ -473,15 +513,19 @@ def plot_reconstruction(y: np.ndarray, t: np.ndarray, D_full: np.ndarray,
         ax1.plot(t, D_rec[station, :], lw=1, label=f"{r} mode(s)")
         ax2.plot(y, D_rec[:, -1], lw=1, label=f"{r} mode(s)")
 
+    force_component = field_info['component']
     ax1.set_xlabel("Time [s]")
-    ax1.set_ylabel("Force [N/m] at specified station")
-    ax1.set_title("Reconstruction quality (time series)")
+    ax1.set_ylabel(f"Force {force_component} [N/m] at specified station")
+    ax1.set_title(f"Reconstruction quality of {force_component} (time series)")
     ax1.legend(fontsize=8)
+    ax1.grid(alpha=.8, zorder=0)
 
     ax2.set_xlabel("Spanwise station y [m]")
-    ax2.set_ylabel("Force [N/m] at last time step")
-    ax2.set_title("Reconstruction quality (spanwise, last snapshot)")
+    ax2.set_ylabel(f"Force {force_component} [N/m] at last time step")
+    ax2.set_title(f"Reconstruction quality of {force_component} (spanwise, "
+                  "last snapshot)")
     ax2.legend(fontsize=8)
+    ax2.grid(alpha=.8, zorder=0)
 
     fig.tight_layout()
     if out_dir is not None:
@@ -512,12 +556,12 @@ def plot_force_orbit(t: np.ndarray, Fx: np.ndarray, Fz: np.ndarray,
 
     Parameters
     ----------
-    t : np.ndarray of shape (n_snapshots,)
+    t : np.ndarray, shape (n_snapshots,)
         Time vector, shape ``(n_snapshots,)``, in seconds. Used to colour
         the original orbit by time so the direction of travel is visible.
-    Fx : np.ndarray of shape (n_snapshots, n_sections)
+    Fx : np.ndarray, shape (n_snapshots, n_sections)
         Original edgewise sectional force.
-    Fz : np.ndarray of shape (n_snapshots, n_sections)
+    Fz : np.ndarray, shape (n_snapshots, n_sections)
         Original flapwise sectional force.
     pod : dict of {str : np.ndarray}
         POD decomposition returned by :func:`compute_pod`, computed on the
@@ -588,8 +632,7 @@ def plot_force_orbit(t: np.ndarray, Fx: np.ndarray, Fz: np.ndarray,
     ax.set_title(f"Sectional-force orbit at station index {station}")
     ax.set_aspect("equal", adjustable="box")
     ax.legend(fontsize=8, loc="best")
-    fig.tight_layout()
-
+    ax.grid(alpha=.8, zorder=0)
     if out_dir is not None:
         fig.savefig(Path(out_dir) / "05_force_orbit.png", dpi=150)
 
@@ -604,6 +647,7 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray, Fx: np.ndarray,
                             amplitude: float = AMPLITUDE,
                             omega: float = 2 * np.pi * F_FORCING,
                             n_modes: int = 4,
+                            r_values: Iterable[int] = (1, 2, 4),
                             work_file: None | PurePath = None):
     """
     Correlate aerodynamic power with the leading POD temporal coefficients.
@@ -617,13 +661,13 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray, Fx: np.ndarray,
 
     Parameters
     ----------
-    y : ndarray of shape (n_sections,)
+    y : ndarray, shape (n_sections,)
         Spanwise station coordinates.
-    t : ndarray of shape (n_snapshots,)
+    t : ndarray, shape (n_snapshots,)
         Time vector.
-    Fx : ndarray of shape (n_snapshots, n_sections)
+    Fx : ndarray, shape (n_snapshots, n_sections)
         Edgewise sectional force.
-    Fz : ndarray of shape (n_snapshots, n_sections)
+    Fz : ndarray, shape (n_snapshots, n_sections)
         Flapwise sectional force.
     pod : dict
         Dictionary returned by :func:`compute_pod`.
@@ -633,6 +677,9 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray, Fx: np.ndarray,
         Blade motion amplitude scaling factor.
     omega : float, optional
         Angular excitation frequency in rad/s.
+    r_values : iterable of int, optional
+        Numbers of POD modes used for the truncated reconstructions.
+        Default is ``(1, 2, 4)``.
     n_show : int, optional
         Number of leading modes to consider for the correlation calculation.
         Default is 4.
@@ -657,8 +704,8 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray, Fx: np.ndarray,
     """
     vx = np.polyval(COEFF_X, y - 2.8) * amplitude * omega \
         * np.cos(omega * t)[:, None]
-    vz = np.polyval(COEFF_Z, y - 2.8) * amplitude * omega \
-        * np.cos(omega * t)[:, None]
+    # vz = np.polyval(COEFF_Z, y - 2.8) * amplitude * omega \
+    #     * np.cos(omega * t)[:, None]
     # p_sectional = Fx * vx + Fz * vz  # [W/m] Instantaneous power
     p_sectional = Fx * vx  # [W/m] Instantaneous power
     P_total = np.trapezoid(p_sectional, y, axis=1)  # [W] Power per time step
@@ -686,16 +733,47 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray, Fx: np.ndarray,
     for k, c in enumerate(corr, start=1):
         print(f"  mode {k}: r = {c:+.3f}")
 
+    # Plot Instantaneous power time series
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(t, P_total, "k", label="instantaneous power P(t)")
     ax2 = ax.twinx()
+    ax.plot(t, P_total, "k", label="Instantaneous power P(t)")
     ax2.plot(t, pod["time_coeff"][0, :], "C0", label="a_1(t)")
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("Power [W]")
     ax2.set_ylabel("a_1(t)", color="C0")
     ax.set_title("Aerodynamic power vs. leading POD temporal coefficient")
+
+    ax.grid(alpha=.8, zorder=0)
+    ax2.grid(alpha=.8, zorder=0)
+
     fig.tight_layout()
     fig.savefig(out_dir / "06_power_vs_mode1.png", dpi=150)
+    plt.close(fig)
+
+    # Plot spanwise energy injection distribution
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(y, np.trapezoid(p_sectional, t, axis=0), "k",
+            label="Sectional energy injection")
+    # ax.plot(y, np.average(p_sectional, axis=0), "k",
+    #         label="Avg. sectional power")
+
+    for r in r_values:
+        pod_fx = compute_pod(field=Fx)
+        D_rec = reconstruct(pod_fx, r).T
+        p_sectional_rec = D_rec * vx  # [W/m] Instantaneous power
+        ax.plot(y, np.trapezoid(p_sectional_rec, t, axis=0),
+                ls="--", alpha=.8,
+                label=f"Reconstruction with {r} mode(s)")
+        # ax.plot(y, np.average(p_sectional_rec, axis=0), label=f"{r} mode(s)")
+
+    ax.set_xlabel("Spanwise station y [m]")
+    ax.set_ylabel("Sectional energy injection [J/m]")
+    ax.set_title("Sectional aerodynamic energy injection")
+    ax.grid(alpha=.8, zorder=0)
+    ax.legend(fontsize=8)
+
+    fig.tight_layout()
+    fig.savefig(out_dir / "07_power_sectional.png", dpi=150)
     plt.close(fig)
 
 
@@ -740,17 +818,21 @@ def main():
 
     # For the reconstruction check, use whichever raw field matches FIELD
     # ("combined" mixes units, so default the sanity-check plot to Fz).
-    D_full_check = Fz if FIELD != "fx" else Fx
+    mode_full_check = "fx" if FIELD != "fz" else "fz"
+    D_full_check, field_info_full_check = build_field_matrix(
+        Fx=Fx, Fz=Fz, mode=mode_full_check)
     pod_check = pod if field_info["kind"] == "single" \
         else compute_pod(D_full_check)
     idx_onethird = np.where(y >= y[-1]/3)[0][0]
     plot_reconstruction(y=y, t=t, D_full=D_full_check, pod=pod_check,
+                        field_info=field_info_full_check,
                         station=idx_onethird, out_dir=OUTPUT_DIR)
 
     if field_info["kind"] == "combined":
-        plot_force_orbit(t=t, Fx=Fx, Fz=Fz, pod=pod, field_info=field_info,
+        plot_force_orbit(t=t, Fx=Fx, Fz=Fz,
+                         pod=pod, field_info=field_info,
                          station=idx_onethird,
-                         r_values=(2, 4),
+                         r_values=(2, 4, n99),
                          out_dir=OUTPUT_DIR)
 
     if DO_POWER_CHECK:
