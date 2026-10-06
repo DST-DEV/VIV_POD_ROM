@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "viv-rom"
+description = "A Python package for reduced order modeling of vortex induced vibrations of wind turbine blades via proper orthogonal decomposition"
+version = "0.0.1"
+requires-python = ">=3.14"
+
+authors = [
+    { name = "Davis Stöwer", email = "s242864@dtu.dk" }
+]
+
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13"
+	"openpyxl>=3.0",
+	"matplotlib>=3.0"
+]
+
+license = { file = "LICENSE" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/viv_rom"]
+
+[project.scripts]
+pod = "viv_rom.pod.cli:main"
