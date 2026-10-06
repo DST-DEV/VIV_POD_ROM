@@ -10,6 +10,7 @@
 /data/
 /results/
 /figures/
+/VIV\ POD\ Analysis/
 *.tar.gz
 
 # Byte-compiled / optimized / DLL files
