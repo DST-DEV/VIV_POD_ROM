@@ -21,13 +21,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from viv_rom.pod import plotting
+from viv_rom.loading import load_case
 from viv_rom.pod.config import PODConfig
 from viv_rom.domain.data import ForceFieldFile
 from viv_rom.pod.core import (FieldInfo, PODResult, build_field_matrix,
                               compute_pod)
 from viv_rom.pod.power import PowerCheck, power_correlation_check
-from viv_rom.pod.spectral import dominant_frequency
-from viv_rom.io.cfd_reader import HyReader
+from viv_rom.signal_utils import dominant_frequency
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +61,6 @@ class PODAnalysisResult:
     @property
     def Fz(self) -> np.ndarray:
         return self.force_file.data.Fz
-
-
-def load_case(config: PODConfig) -> ForceFieldFile:
-    """Read the force field file selected by ``config``."""
-    reader = HyReader(config.data_dir)
-    return reader.retrieve_force_field(
-        amplitude=config.amplitude, pitch=config.pitch,
-        inclination=config.inclination, wind_speed=config.wind_speed,
-        n_skip=config.n_skip, n_last=config.n_last)
 
 
 def analyse(config: PODConfig) -> PODAnalysisResult:
@@ -157,37 +148,38 @@ def write_figures(result: PODAnalysisResult, config: PODConfig,
     y, t, pod = result.y, result.t, result.pod
 
     figures = {
-        "01_energy_spectrum.png":
+        "01_energy_spectrum":
             plotting.plot_energy_spectrum(pod),
-        "02_spatial_modes.png":
+        "02_spatial_modes":
             plotting.plot_spatial_modes(y=y, pod=pod,
                                         field_info=result.field_info,
                                         motion=config.motion, n_show=n_show),
-        "03_temporal_coefficients.png":
+        "03_temporal_coefficients":
             plotting.plot_temporal_coefficients(t=t, pod=pod, dt=result.dt,
                                                 f_forcing=config.f_forcing,
                                                 n_show=n_show),
-        "04_reconstruction_check.png":
+        "04_reconstruction_check":
             plotting.plot_reconstruction(y=y, t=t, D_full=result.field,
                                          pod=result.pod,
                                          field_info=result.field_info,
                                          station=result.station_index),
     }
     if result.field_info.kind == "combined":
-        figures["05_force_orbit.png"] = plotting.plot_force_orbit(
+        figures["05_force_orbit"] = plotting.plot_force_orbit(
             t=t, Fx=result.Fx, Fz=result.Fz,
             pod=pod, field_info=result.field_info,
             station=result.station_index, r_values=(2, 4, result.n99))
     if result.power is not None:
-        figures["06_power_vs_mode1.png"] = plotting.plot_power_vs_mode1(
+        figures["06_power_vs_mode1"] = plotting.plot_power_vs_mode1(
             t=t, pod=pod, power=result.power)
-        figures["07_power_sectional.png"] = plotting.plot_sectional_energy(
+        figures["07_power_sectional"] = plotting.plot_sectional_energy(
             y=y, power=result.power)
 
     paths = []
     for name, fig in figures.items():
-        path = output_dir / name
+        path = output_dir / (name + ".png")
         fig.savefig(path, dpi=dpi)
+        fig.savefig(output_dir / (name + ".svg"))
         plt.close(fig)
         paths.append(path)
     return paths

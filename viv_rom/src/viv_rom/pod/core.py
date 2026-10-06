@@ -7,6 +7,9 @@
     sigma[k]   -> k-th singular value
     a_k(t) = sigma[k] * Psi[:, k]  -> k-th temporal coefficient
     sigma[k]**2 / sum(sigma**2)    -> fraction of fluctuation energy in mode k
+
+    Array convention: sectional fields have shape ``(n_stations, n_steps)`` and
+    spanwise spectral maps are returned as ``(n_stations, n_freqs)``.
 """
 from __future__ import annotations
 

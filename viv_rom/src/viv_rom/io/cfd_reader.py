@@ -24,7 +24,7 @@ from viv_rom.domain.data import ForceFieldFile, ForceFieldData
 
 
 class HyReader:
-    FILE_PATTERN = "a{amp:02d}_p{pitch:02d}_i{incl:02d}_u{speed:02d}"
+    FILE_PATTERN = "a{amp:02d}_p{pitch:02d}_i{incl:02d}_u{speed:d}"
 
     def __init__(self, data_dir):
         """Initialize a ``.1HY`` file reader.

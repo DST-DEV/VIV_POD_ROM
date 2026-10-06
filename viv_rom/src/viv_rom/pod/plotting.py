@@ -14,7 +14,7 @@ from matplotlib.figure import Figure
 from viv_rom.domain.motion import ForcedMotion
 from viv_rom.pod.core import FieldInfo, PODResult
 from viv_rom.pod.power import PowerCheck
-from viv_rom.pod.spectral import dominant_frequency
+from viv_rom.signal_utils import dominant_frequency
 
 
 def plot_energy_spectrum(pod: PODResult, n_show: int = 20) -> Figure:
@@ -167,7 +167,7 @@ def plot_reconstruction(y: np.ndarray, t: np.ndarray, D_full: np.ndarray,
         ax2.legend(fontsize=8)
         ax2.grid(alpha=.8, zorder=0)
     else:
-        fig, axes = plt.subplots(2, 2, figsize=(11, 4))
+        fig, axes = plt.subplots(2, 2, figsize=(11, 8))
         fx_full, fz_full = field_info.split(D_full)
 
         axes[0, 0].plot(t, fx_full[station, :], "k", lw=1.5,
