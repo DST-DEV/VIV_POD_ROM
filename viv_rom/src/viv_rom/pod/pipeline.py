@@ -108,32 +108,68 @@ def analyse(config: PODConfig) -> PODAnalysisResult:
         station_index=station_index, power=power)
 
 
-def log_summary(result: PODAnalysisResult, config: PODConfig) -> None:
-    """Log the POD summary table and the power cross-check."""
+def pod_summary_text(result: PODAnalysisResult, config: PODConfig) -> str:
     pod = result.pod
-    logger.info("\n--- POD summary (field = '%s') ---", config.field)
-    logger.info("%4s %10s %8s %15s %17s", "mode", "energy %", "cum %",
-                "dom. freq [Hz]", "freq / f_forcing")
+
+    lines = []
+    lines.append(f"--- POD summary (field = '{config.field}') ---")
+    lines.append(
+        f"{'mode':>4} {'energy %':>10} {'cum %':>8} "
+        f"{'dom. freq [Hz]':>15} {'freq / f_forcing':>17}"
+    )
+
     for k, f_dom in enumerate(result.dominant_freqs):
-        logger.info("%4d %10.2f %8.2f %15.4f %17.3f", k + 1,
-                    100 * pod.energy_frac[k], 100 * pod.cum_energy[k],
-                    f_dom, f_dom / config.f_forcing)
-    logger.info("\nModes needed to capture 99%% of the fluctuation energy: %d",
-                result.n99)
+        lines.append(
+            f"{k+1:4d}"
+            f"{100*pod.energy_frac[k]:10.2f}"
+            f"{100*pod.cum_energy[k]:8.2f}"
+            f"{f_dom:15.4f}"
+            f"{f_dom/config.f_forcing:17.3f}"
+        )
+
+    lines.append("")
+    lines.append(
+        f"Modes needed to capture 99% of the fluctuation energy: {result.n99}"
+    )
 
     p = result.power
     if p is not None:
-        logger.info("\n--- Physical power cross-check ---")
-        logger.info("Mean input power (from Fx and prescribed velocity): "
-                    "%.4g W  (%s the motion)", p.mean_power,
-                    "exciting" if p.mean_power > 0 else "damping")
+        lines.append("")
+        lines.append("--- Physical power cross-check ---")
+        lines.append(
+            f"Mean input power (from Fx and prescribed velocity): "
+            f"{p.mean_power:.4g} W "
+            f"({'exciting' if p.mean_power > 0 else 'damping'} the motion)"
+        )
+
         if p.mean_power_work is not None:
-            logger.info("Mean power from *.1work file (cross-check): %.4g W",
-                        p.mean_power_work)
-        logger.info("Correlation of each leading POD mode's a_k(t) with "
-                    "instantaneous power:")
+            lines.append(
+                f"Mean power from *.1work file (cross-check): "
+                f"{p.mean_power_work:.4g} W"
+            )
+
+        lines.append(
+            "Correlation of each leading POD mode's a_k(t) with "
+            "instantaneous power:"
+        )
+
         for k, c in enumerate(p.correlations, start=1):
-            logger.info("  mode %d: r = %+.3f", k, c)
+            lines.append(f"  mode {k}: r = {c:+.3f}")
+
+    return "\n".join(lines)
+
+
+def log_summary(result: PODAnalysisResult, config: PODConfig) -> None:
+    summary = pod_summary_text(result, config)
+
+    # Console/log output
+    logger.info("\n%s", summary)
+
+    # Save to file
+    output_dir = config.default_output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    (output_dir / "pod_summary.txt").write_text(summary, encoding="utf-8")
 
 
 def write_figures(result: PODAnalysisResult, config: PODConfig,

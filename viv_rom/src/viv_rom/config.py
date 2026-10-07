@@ -65,4 +65,5 @@ class CaseConfig:
 
     def output_dir_for(self, method: str) -> Path:
         """Default output folder: ``results/<case>_u<speed>/<method>``."""
-        return Path("results") / f"{self.case}_u{self.wind_speed:02d}" / method
+        return Path("results") / f"{self.case}" / f"u{self.wind_speed:02d}" \
+            / method
