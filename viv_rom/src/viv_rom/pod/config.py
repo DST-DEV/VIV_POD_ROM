@@ -1,11 +1,14 @@
 """Configuration of a POD analysis run (replaces the script's globals)."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field as dc_field
 
 from viv_rom.config import CaseConfig
 from viv_rom.domain.motion import FIRST_EDGEWISE_MODE, ForcedMotion
 from viv_rom.pod.core import FIELD_OPTIONS
+from viv_rom.pod.energy_injection import (resolve_aggregators,
+                                          resolve_reference)
 from viv_rom.pod.normalization import (RHO_AIR, Normalizer,
                                        available_normalizers, make_normalizer)
 
@@ -40,6 +43,23 @@ class PODConfig(CaseConfig):
         is accepted too.
     air_density : float
         ``rho`` [kg/m^3] for the dynamic pressure ``q = 0.5 * rho * U**2``.
+    do_energy_analysis : bool
+        Compute the energy injection of each mode and the number of modes
+        needed to reproduce the spanwise energy injection.
+    energy_tolerance : float
+        Accepted aggregated error of the reconstructed energy injection;
+        0.01 means 99 % accuracy.
+    energy_error_metrics : sequence of (str or callable)
+        How per-station errors are combined: any of ``"mean"``, ``"rms"``,
+        ``"max"`` or a callable ``station_errors -> float``.
+    energy_error_reference : {"peak", "local"} or callable
+        Station errors are scaled by the peak ``|E|`` over the span
+        (default) or by the local ``|E_j|``.
+    phase_modes : int
+        Number of leading modes whose temporal-coefficient phase is
+        reported (0 disables the phase analysis).
+    phase_harmonics : int
+        Harmonics ``1..n`` of the forcing frequency used for the phases.
     """
     field: str = "combined"
     n_modes_show: int = 4
@@ -49,6 +69,12 @@ class PODConfig(CaseConfig):
     motion: ForcedMotion = dc_field(default=FIRST_EDGEWISE_MODE, repr=False)
     normalization: tuple[str | Normalizer, ...] = ()
     air_density: float = RHO_AIR
+    do_energy_analysis: bool = True
+    energy_tolerance: float = 0.01
+    energy_error_metrics: tuple = ("mean", "rms", "max")
+    energy_error_reference: str | Callable = "peak"
+    phase_modes: int = 4
+    phase_harmonics: int = 3
 
     def __post_init__(self):
         super().__post_init__()
@@ -59,6 +85,14 @@ class PODConfig(CaseConfig):
             self.normalization = (self.normalization,)
         self.normalization = tuple(self.normalization)
         self.normalizers()  # fail early on unknown names
+        self.energy_error_metrics = tuple(self.energy_error_metrics)
+        resolve_aggregators(self.energy_error_metrics)
+        resolve_reference(self.energy_error_reference)
+        if self.energy_tolerance < 0:
+            raise ValueError("energy_tolerance must be non-negative.")
+        if self.phase_modes < 0 or self.phase_harmonics < 1:
+            raise ValueError("phase_modes must be >= 0 and phase_harmonics "
+                             ">= 1.")
 
     def normalizers(self) -> tuple[Normalizer, ...]:
         """The configured normalisation strategies as instances."""

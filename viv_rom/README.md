@@ -57,6 +57,31 @@ Normalization is off by default.
 
 Modes, singular values and temporal coefficients live in the normalized space; `result.reconstruct(r)` returns the rank-`r` field back in N/m. To add a strategy, implement `Normalizer.scales(ctx)` and decorate it with `@register_normalizer("name")` -- nothing else changes.
 
+## Energy injection and harmonic phase
+
+Two further POD diagnostics run in `analyse` (both configurable on
+`PODConfig`, both can be switched off):
+
+* **Energy injection** (`pod/energy_injection.py`, `--no-energy-analysis`).
+  `E(y) = integral (Fx*vx + Fz*vz) dt` [J/m] is linear in the field, so
+  `E_rec(y; r) = E_mean(y) + sum_{k<=r} E_k(y)` exactly (normalization
+  undone). This gives the energy injection of each mode, and per station
+  `e_j(r) = |E_rec_j - E_j| / ref_j`, combined over the span by
+  `mean`/`rms`/`max` (or any callable). The number of modes required is the
+  smallest `r` whose aggregated error is below `energy_tolerance` (0.01 =
+  99 %). `ref_j` is the peak `|E|` (`"peak"`, default) or local `|E_j|`.
+* **Harmonic phase** (`pod/phase.py`, `--phase-modes K --phase-harmonics H`).
+  Least-squares fit of `a_k(t)` with the forcing frequency and harmonics
+  `1..H`. Phase is the lead relative to the forced displacement
+  `sin(omega t)` (0 deg: displacement, +90 deg: velocity). Modes are
+  oriented so the largest entry of the spatial mode is positive, since the
+  sign of a POD mode is arbitrary. `phase_modes=0` disables it.
+
+    viv pod ... --energy-metrics rms max --energy-tolerance 0.01 --phase-modes 4
+
+Results: `result.energy` (`.n_required`, `.modes`, `.mode_totals`,
+`.curves`) and `result.phases` (`.phase_deg`, `.amplitude`, `.explained`).
+
 ## Conventions
 
 * Sectional fields (`Fx`, `Fz`, POD snapshot matrices) have shape
@@ -72,7 +97,8 @@ Modes, singular values and temporal coefficients live in the normalized space; `
       cli.py  cli_common.py                      `viv <method>` umbrella CLI
       domain/   data.py, motion.py               data containers, forced motion
       readers/  cfd_reader.py                    HyReader (.1HY files)
-      pod/      config core power plotting pipeline cli
+      pod/      config core normalization preprocessing energy_injection phase
+                power plotting pipeline cli
       spectral/ config core plotting sweep pipeline cli
 
 ## Adding a method (e.g. SPOD)

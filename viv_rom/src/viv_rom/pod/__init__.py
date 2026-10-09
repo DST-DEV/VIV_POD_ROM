@@ -7,13 +7,19 @@ matplotlib) is loaded on first access of ``analyse``, ``run`` or
 from viv_rom.pod.config import PODConfig
 from viv_rom.pod.core import (FieldInfo, PODResult, build_field_matrix,
                               compute_pod)
+from viv_rom.pod.energy_injection import (AGGREGATORS, REFERENCES,
+                                          EnergyInjection, FieldModel,
+                                          energy_injection_analysis)
 from viv_rom.pod.normalization import (ComponentScales,
                                        DynamicPressureNormalizer,
                                        FieldScaling, NormalizationContext,
                                        Normalizer, WorkWeightNormalizer,
                                        available_normalizers, make_normalizer,
                                        register_normalizer)
-from viv_rom.pod.power import PowerCheck, power_correlation_check
+from viv_rom.pod.phase import (HarmonicPhases, canonical_signs,
+                               harmonic_phase_analysis)
+from viv_rom.pod.power import (PowerCheck, power_correlation_check,
+                               sectional_power)
 from viv_rom.pod.preprocessing import (PhysicalReconstructor, Preprocessing,
                                        Preprocessor, remove_mean)
 
@@ -22,6 +28,9 @@ __all__ = ["PODConfig", "FieldInfo", "PODResult", "build_field_matrix",
            "ComponentScales", "DynamicPressureNormalizer", "FieldScaling",
            "NormalizationContext", "Normalizer", "WorkWeightNormalizer",
            "available_normalizers", "make_normalizer", "register_normalizer",
+           "AGGREGATORS", "REFERENCES", "EnergyInjection", "FieldModel",
+           "energy_injection_analysis", "HarmonicPhases", "canonical_signs",
+           "harmonic_phase_analysis", "sectional_power",
            "PhysicalReconstructor", "Preprocessing", "Preprocessor",
            "remove_mean",
            "PODAnalysisResult", "analyse", "run", "write_figures"]

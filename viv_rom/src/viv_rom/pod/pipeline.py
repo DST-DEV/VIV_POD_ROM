@@ -26,7 +26,11 @@ from viv_rom.pod.config import PODConfig
 from viv_rom.domain.data import ForceFieldFile
 from viv_rom.pod.core import (FieldInfo, PODResult, build_field_matrix,
                               compute_pod)
+from viv_rom.pod.energy_injection import (EnergyInjection,
+                                          energy_injection_analysis)
 from viv_rom.pod.normalization import NormalizationContext
+from viv_rom.pod.phase import (HarmonicPhases, canonical_signs,
+                               harmonic_phase_analysis)
 from viv_rom.pod.power import PowerCheck, power_correlation_check
 from viv_rom.pod.preprocessing import (PhysicalReconstructor, Preprocessing,
                                        Preprocessor)
@@ -49,6 +53,8 @@ class PODAnalysisResult:
     n_periods: float
     station_index: int
     power: PowerCheck | None = None
+    energy: EnergyInjection | None = None
+    phases: HarmonicPhases | None = None
 
     @property
     def reconstruct(self) -> PhysicalReconstructor:
@@ -125,11 +131,30 @@ def analyse(config: PODConfig) -> PODAnalysisResult:
             omega=omega, n_modes=n99,
             work_file=work_file)
 
+    energy = None
+    if config.do_energy_analysis:
+        amp = config.effective_motion_amplitude
+        energy = energy_injection_analysis(
+            model=reconstruct, field=field, field_info=field_info, y=y, t=t,
+            vx=config.motion.velocity("x", y, t, amp, omega),
+            vz=config.motion.velocity("z", y, t, amp, omega),
+            tolerance=config.energy_tolerance,
+            aggregators=config.energy_error_metrics,
+            reference=config.energy_error_reference)
+
+    phases = None
+    if config.phase_modes > 0:
+        phases = harmonic_phase_analysis(
+            time_coeff=pod.time_coeff, t=t, f_forcing=config.f_forcing,
+            n_modes=config.phase_modes, n_harmonics=config.phase_harmonics,
+            signs=canonical_signs(pod.modes))
+
     return PODAnalysisResult(
         force_file=force_file, field=field, field_info=field_info,
         preprocessing=preprocessing, pod=pod,
         dominant_freqs=dominant_freqs, n99=n99, dt=dt, n_periods=n_periods,
-        station_index=station_index, power=power)
+        station_index=station_index, power=power, energy=energy,
+        phases=phases)
 
 
 def pod_summary_text(result: PODAnalysisResult, config: PODConfig) -> str:
@@ -182,6 +207,11 @@ def pod_summary_text(result: PODAnalysisResult, config: PODConfig) -> str:
 
         for k, c in enumerate(p.correlations, start=1):
             lines.append(f"  mode {k}: r = {c:+.3f}")
+
+    for section in (result.energy, result.phases):
+        if section is not None:
+            lines.append("")
+            lines.extend(section.summary_lines())
 
     return "\n".join(lines)
 
@@ -238,6 +268,15 @@ def write_figures(result: PODAnalysisResult, config: PODConfig,
             t=t, pod=pod, power=result.power)
         figures["07_power_sectional"] = plotting.plot_sectional_energy(
             y=y, power=result.power)
+
+    if result.energy is not None:
+        figures["08_mode_energy_injection"] = (
+            plotting.plot_mode_energy_injection(result.energy, n_show=n_show))
+        figures["09_energy_reconstruction_error"] = (
+            plotting.plot_energy_reconstruction_error(result.energy))
+    if result.phases is not None:
+        figures["10_harmonic_phase"] = plotting.plot_harmonic_phases(
+            result.phases)
 
     paths = []
     for name, fig in figures.items():

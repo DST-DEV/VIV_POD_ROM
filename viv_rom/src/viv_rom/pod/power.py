@@ -14,6 +14,22 @@ from viv_rom.pod.core import PODResult, FieldInfo
 logger = logging.getLogger(__name__)
 
 
+def sectional_power(field: np.ndarray, field_info: FieldInfo,
+                    vx: np.ndarray, vz: np.ndarray) -> np.ndarray:
+    """Sectional power ``p(y, t)`` [W/m] of a snapshot-matrix-shaped field.
+
+    ``field`` has the layout described by ``field_info`` (shape
+    ``(n_points, n_t)``, or ``(n_points, 1)`` for a time-independent field
+    such as a mean). For a single-component field only that component's
+    work is counted; for a combined field ``p = Fx*vx + Fz*vz``.
+    """
+    if field_info.kind == "single":
+        v = vx if field_info.component == "Fx" else vz
+        return field * v
+    fx, fz = field_info.split(field)
+    return fx * vx + fz * vz
+
+
 @dataclass(frozen=True, eq=False)
 class PowerCheck:
     """Result of :func:`power_correlation_check`.
@@ -115,12 +131,7 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray,
 
     reconstructed = {}
     for r in r_values:
-        if field_info.kind == "single":
-            v = vx if field_info.component == "Fx" else vz
-            p_rec = reconstruct(r) * v  # [W/m]
-        else:
-            fx_rec, fz_rec = field_info.split(reconstruct(r))
-            p_rec = fx_rec * vx + fz_rec * vz  # [W/m]
+        p_rec = sectional_power(reconstruct(r), field_info, vx, vz)  # [W/m]
 
         reconstructed[r] = np.trapezoid(p_rec, t, axis=1)
 

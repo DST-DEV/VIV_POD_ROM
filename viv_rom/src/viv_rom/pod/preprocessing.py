@@ -112,3 +112,21 @@ class PhysicalReconstructor:
 
     def __call__(self, r: int) -> np.ndarray:
         return self.preprocessing.inverse(self.pod.reconstruct(r))
+
+    @property
+    def n_modes(self) -> int:
+        return self.pod.n_modes
+
+    def mean(self) -> np.ndarray:
+        """Temporal-mean field in physical units, shape ``(n_points, 1)``."""
+        return self.preprocessing.scaling.invert(
+            self.preprocessing.mean[:, None])
+
+    def mode(self, k: int) -> np.ndarray:
+        """Mode ``k`` (0-based) alone, in physical units, without the mean.
+
+        Shape ``(n_points, n_snapshots)``. Because the normalisation is
+        linear, ``mean() + sum_k mode(k)`` over all modes is the raw field.
+        """
+        fluct = np.outer(self.pod.modes[:, k], self.pod.time_coeff[k, :])
+        return self.preprocessing.scaling.invert(fluct)
