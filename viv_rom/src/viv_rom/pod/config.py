@@ -6,6 +6,8 @@ from dataclasses import dataclass, field as dc_field
 from viv_rom.config import CaseConfig
 from viv_rom.domain.motion import FIRST_EDGEWISE_MODE, ForcedMotion
 from viv_rom.pod.core import FIELD_OPTIONS
+from viv_rom.pod.normalization import (RHO_AIR, Normalizer,
+                                       available_normalizers, make_normalizer)
 
 
 @dataclass
@@ -28,6 +30,16 @@ class PODConfig(CaseConfig):
         Run the physical power cross-check.
     motion : ForcedMotion
         Prescribed motion shapes.
+    normalization : sequence of (str or Normalizer)
+        Optional normalisation applied before mean removal and POD. Empty
+        (default) means none. Items are registered names
+        (``"dynamic_pressure"``, ``"work"``; see
+        :func:`~viv_rom.pod.normalization.available_normalizers`) or
+        :class:`~viv_rom.pod.normalization.Normalizer` instances for custom
+        options, e.g. ``(WorkWeightNormalizer(floor=1e-2),)``. A single name
+        is accepted too.
+    air_density : float
+        ``rho`` [kg/m^3] for the dynamic pressure ``q = 0.5 * rho * U**2``.
     """
     field: str = "combined"
     n_modes_show: int = 4
@@ -35,12 +47,23 @@ class PODConfig(CaseConfig):
     station_y: float = 81.0
     do_power_check: bool = True
     motion: ForcedMotion = dc_field(default=FIRST_EDGEWISE_MODE, repr=False)
+    normalization: tuple[str | Normalizer, ...] = ()
+    air_density: float = RHO_AIR
 
     def __post_init__(self):
         super().__post_init__()
         if self.field not in FIELD_OPTIONS:
             raise ValueError(f"Unknown field option: {self.field!r} "
                              f"(use one of {FIELD_OPTIONS}).")
+        if isinstance(self.normalization, (str, Normalizer)):
+            self.normalization = (self.normalization,)
+        self.normalization = tuple(self.normalization)
+        self.normalizers()  # fail early on unknown names
+
+    def normalizers(self) -> tuple[Normalizer, ...]:
+        """The configured normalisation strategies as instances."""
+        return tuple(make_normalizer(n) if isinstance(n, str) else n
+                     for n in self.normalization)
 
     @property
     def effective_motion_amplitude(self) -> float:

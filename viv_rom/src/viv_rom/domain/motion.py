@@ -42,14 +42,24 @@ class ForcedMotion:
         shape = np.polyval(coeff, np.asarray(y) - self.y_offset)
         return shape / np.max(shape) if normalize else shape
 
+    def velocity_amplitude(self, component: str, y: np.ndarray,
+                           amplitude: float, omega: float) -> np.ndarray:
+        """Amplitude of the prescribed velocity [m/s], shape (len(y),).
+
+        ``phi_i(y) * A * omega`` -- the time-independent factor of
+        :meth:`velocity`.
+        """
+        phi = self.modeshape(component, y, normalize=False)
+        return phi * amplitude * omega
+
     def velocity(self, component: str, y: np.ndarray, t: np.ndarray,
                  amplitude: float, omega: float) -> np.ndarray:
-        """Velocity [m/s], shape (len(t), len(y)).
+        """Velocity [m/s], shape (len(y), len(t)).
 
         ``v_i(y, t) = phi_i(y) * A * omega * cos(omega * t)``
         """
-        phi = self.modeshape(component, y, normalize=False)
-        return phi[:, None] * amplitude * omega * np.cos(omega * np.asarray(t))
+        v_amp = self.velocity_amplitude(component, y, amplitude, omega)
+        return v_amp[:, None] * np.cos(omega * np.asarray(t))
 
 
 # Motion polynomials from the simulation README (first edgewise mode).

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import numpy as np
 
@@ -44,7 +44,9 @@ class PowerCheck:
 
 def power_correlation_check(y: np.ndarray, t: np.ndarray,
                             Fx: np.ndarray, Fz: np.ndarray,
-                            pod: PODResult, field_info: FieldInfo,
+                            pod: PODResult,
+                            reconstruct: Callable[[int], np.ndarray],
+                            field_info: FieldInfo,
                             motion: ForcedMotion, amplitude: float,
                             omega: float, n_modes: int = 4,
                             r_values: Iterable[int] = (1, 2, 4),
@@ -66,7 +68,12 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray,
     Fz : ndarray, shape (n_snapshots, n_sections)
         Flapwise sectional force.
     pod : PODResult
-        POD results.
+        POD results (its temporal coefficients are correlated with ``P(t)``).
+    reconstruct : callable
+        ``reconstruct(r)`` returns the rank-``r`` field in *physical* units
+        (N/m), shape ``(n_points, n_snapshots)`. E.g. a
+        :class:`~viv_rom.pod.preprocessing.PhysicalReconstructor`, which also
+        undoes any normalisation.
     field_info : FieldInfo
         Needed to split a "combined" spatial mode back into its Fx and Fz
         parts.
@@ -108,12 +115,11 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray,
 
     reconstructed = {}
     for r in r_values:
-        if field_info.component == "fx":
-            p_rec = pod.reconstruct(r) * vx  # [W/m]
-        elif field_info.component == "fz":
-            p_rec = pod.reconstruct(r) * vz  # [W/m]
+        if field_info.kind == "single":
+            v = vx if field_info.component == "Fx" else vz
+            p_rec = reconstruct(r) * v  # [W/m]
         else:
-            fx_rec, fz_rec = field_info.split(pod.reconstruct(r))
+            fx_rec, fz_rec = field_info.split(reconstruct(r))
             p_rec = fx_rec * vx + fz_rec * vz  # [W/m]
 
         reconstructed[r] = np.trapezoid(p_rec, t, axis=1)

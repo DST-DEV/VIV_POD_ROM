@@ -26,7 +26,10 @@ from viv_rom.pod.config import PODConfig
 from viv_rom.domain.data import ForceFieldFile
 from viv_rom.pod.core import (FieldInfo, PODResult, build_field_matrix,
                               compute_pod)
+from viv_rom.pod.normalization import NormalizationContext
 from viv_rom.pod.power import PowerCheck, power_correlation_check
+from viv_rom.pod.preprocessing import (PhysicalReconstructor, Preprocessing,
+                                       Preprocessor)
 from viv_rom.signal_utils import dominant_frequency
 
 logger = logging.getLogger(__name__)
@@ -36,15 +39,21 @@ logger = logging.getLogger(__name__)
 class PODAnalysisResult:
     """Everything computed by :func:`analyse`."""
     force_file: ForceFieldFile
-    field: np.ndarray  # Force field array on which the pod was applied
+    field: np.ndarray  # Raw (physical) snapshot matrix, shape (n_points, n_t)
     field_info: FieldInfo
-    pod: PODResult
+    preprocessing: Preprocessing  # normalisation + mean applied before POD
+    pod: PODResult  # decomposition of the preprocessed (fluctuation) field
     dominant_freqs: np.ndarray      # per reported mode [Hz]
     n99: int                        # modes needed for 99 % of the energy
     dt: float
     n_periods: float
     station_index: int
     power: PowerCheck | None = None
+
+    @property
+    def reconstruct(self) -> PhysicalReconstructor:
+        """``reconstruct(r)``: rank-``r`` field in physical units (N/m)."""
+        return PhysicalReconstructor(self.pod, self.preprocessing)
 
     @property
     def y(self) -> np.ndarray:
@@ -79,7 +88,20 @@ def analyse(config: PODConfig) -> PODAnalysisResult:
                 len(y), y[0], y[-1])
 
     field, field_info = build_field_matrix(Fx=Fx, Fz=Fz, mode=config.field)
-    pod = compute_pod(field=field)
+
+    omega = 2 * np.pi * config.f_forcing
+    context = NormalizationContext(
+        y=y, wind_speed=force_file.wind_speed, motion=config.motion,
+        amplitude=config.effective_motion_amplitude, omega=omega,
+        air_density=config.air_density)
+    preprocessor = Preprocessor(config.normalizers())
+    fluctuation, preprocessing = preprocessor.fit_transform(
+        field, field_info, context)
+    logger.info("  normalization: %s",
+                ", ".join(preprocessing.normalization_names) or "none")
+
+    pod = compute_pod(fluctuation)
+    reconstruct = PhysicalReconstructor(pod, preprocessing)
 
     n_report = min(config.n_modes_show, pod.n_modes)
     dominant_freqs = np.array([
@@ -97,13 +119,15 @@ def analyse(config: PODConfig) -> PODAnalysisResult:
     if config.do_power_check:
         work_file = force_file.source_file.with_suffix(".1work")
         power = power_correlation_check(
-            y=y, t=t, Fx=Fx, Fz=Fz, pod=pod, field_info=field_info,
-            motion=config.motion, amplitude=config.effective_motion_amplitude,
-            omega=2 * np.pi * config.f_forcing, n_modes=n99,
+            y=y, t=t, Fx=Fx, Fz=Fz, pod=pod, reconstruct=reconstruct,
+            field_info=field_info, motion=config.motion,
+            amplitude=config.effective_motion_amplitude,
+            omega=omega, n_modes=n99,
             work_file=work_file)
 
     return PODAnalysisResult(
-        force_file=force_file, field=field, field_info=field_info, pod=pod,
+        force_file=force_file, field=field, field_info=field_info,
+        preprocessing=preprocessing, pod=pod,
         dominant_freqs=dominant_freqs, n99=n99, dt=dt, n_periods=n_periods,
         station_index=station_index, power=power)
 
@@ -112,7 +136,8 @@ def pod_summary_text(result: PODAnalysisResult, config: PODConfig) -> str:
     pod = result.pod
 
     lines = []
-    lines.append(f"--- POD summary (field = '{config.field}') ---")
+    lines.append(f"--- POD summary (field = '{config.field}', normalization = "
+                 f"{', '.join(result.preprocessing.normalization_names) or 'none'}) ---")
     lines.append(
         f"{'mode':>4} {'energy %':>10} {'cum %':>8} "
         f"{'dom. freq [Hz]':>15} {'freq / f_forcing':>17}"
@@ -131,6 +156,8 @@ def pod_summary_text(result: PODAnalysisResult, config: PODConfig) -> str:
     lines.append(
         f"Modes needed to capture 99% of the fluctuation energy: {result.n99}"
     )
+    if not result.preprocessing.scaling.is_identity:
+        lines.append("(energy is that of the normalized fluctuation field)")
 
     p = result.power
     if p is not None:
@@ -187,23 +214,24 @@ def write_figures(result: PODAnalysisResult, config: PODConfig,
         "01_energy_spectrum":
             plotting.plot_energy_spectrum(pod),
         "02_spatial_modes":
-            plotting.plot_spatial_modes(y=y, pod=pod,
-                                        field_info=result.field_info,
-                                        motion=config.motion, n_show=n_show),
+            plotting.plot_spatial_modes(
+                y=y, pod=pod, field_info=result.field_info,
+                motion=config.motion, n_show=n_show,
+                normalization=result.preprocessing.normalization_names),
         "03_temporal_coefficients":
             plotting.plot_temporal_coefficients(t=t, pod=pod, dt=result.dt,
                                                 f_forcing=config.f_forcing,
                                                 n_show=n_show),
         "04_reconstruction_check":
             plotting.plot_reconstruction(y=y, t=t, D_full=result.field,
-                                         pod=result.pod,
+                                         reconstruct=result.reconstruct,
                                          field_info=result.field_info,
                                          station=result.station_index),
     }
     if result.field_info.kind == "combined":
         figures["05_force_orbit"] = plotting.plot_force_orbit(
             t=t, Fx=result.Fx, Fz=result.Fz,
-            pod=pod, field_info=result.field_info,
+            reconstruct=result.reconstruct, field_info=result.field_info,
             station=result.station_index, r_values=(2, 4, result.n99))
     if result.power is not None:
         figures["06_power_vs_mode1"] = plotting.plot_power_vs_mode1(

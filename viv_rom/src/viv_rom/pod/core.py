@@ -1,6 +1,9 @@
 """Proper Orthogonal Decomposition (POD) via the direct SVD method.
 
-    D'(y, t) = D(y, t) - mean_t[D(y, t)]    (fluctuation field)
+The decomposition is applied to a *fluctuation* field ``D'`` that has already
+been prepared (normalised and mean-removed, see
+:mod:`viv_rom.pod.preprocessing`); this module only does the SVD.
+
     D' = Phi @ diag(sigma) @ Psi^T          (economy SVD)
 
     Phi[:, k]  -> k-th spatial POD mode  (unit norm)
@@ -32,15 +35,10 @@ class FieldInfo:
         Force component, for ``kind == "single"``.
     n : int or None
         Number of spanwise sections, for ``kind == "combined"``.
-    scale_x, scale_z : float or None
-        Standard deviations Fx and Fz were divided by, for
-        ``kind == "combined"``.
     """
     kind: str
     component: str | None = None
     n: int | None = None
-    scale_x: float | None = None
-    scale_z: float | None = None
 
     def split(self, arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Split a combined-field quantity into rescaled (Fx, Fz) parts.
@@ -51,17 +49,31 @@ class FieldInfo:
         if self.kind != "combined":
             raise ValueError("split() requires a combined field "
                              "(kind == 'combined').")
-        return arr[:self.n] * self.scale_x, arr[self.n:] * self.scale_z
+        return arr[:self.n], arr[self.n:]
+
+    def layout(self, fx_part: np.ndarray, fz_part: np.ndarray) -> np.ndarray:
+        """Arrange per-section (Fx, Fz) quantities like the snapshot matrix.
+
+        The inverse of :meth:`split` for 1-D per-point quantities such as
+        scaling factors: returns shape ``(n_points,)`` -- the Fx part for a
+        single-Fx field, the Fz part for a single-Fz field, and both stacked
+        for a combined field.
+        """
+        if self.kind == "combined":
+            return np.concatenate([fx_part, fz_part])
+        return fx_part if self.component == "Fx" else fz_part
 
 
 @dataclass(frozen=True, eq=False)
 class PODResult:
-    """Result of :func:`compute_pod`.
+    """Result of :func:`compute_pod`, expressed in the space it was given.
+
+    If the input was normalised (e.g. work-weighted), modes and coefficients
+    live in that normalised space; undo it with
+    :class:`viv_rom.pod.preprocessing.PhysicalReconstructor`.
 
     Attributes
     ----------
-    mean : ndarray, shape (n_points,)
-        Temporal mean field, subtracted before the SVD.
     modes : ndarray, shape (n_points, n_modes)
         Spatial POD modes (orthonormal columns).
     sigma : ndarray, shape (n_modes,)
@@ -73,7 +85,6 @@ class PODResult:
     time_coeff : ndarray, shape (n_modes, n_snapshots)
         Temporal coefficients ``a_k(t) = sigma_k * Psi[:, k]``.
     """
-    mean: np.ndarray
     modes: np.ndarray
     sigma: np.ndarray
     energy_frac: np.ndarray
@@ -85,13 +96,15 @@ class PODResult:
         return len(self.sigma)
 
     def reconstruct(self, r: int) -> np.ndarray:
-        """Reconstruct the field from the mean plus the leading ``r`` modes.
+        """Reconstruct the *fluctuation* field from the leading ``r`` modes.
+
+        The mean is not included (it is not part of the decomposition).
 
         Returns
         -------
         ndarray, shape (n_points, n_snapshots)
         """
-        return self.mean[:, None] + self.modes[:, :r] @ self.time_coeff[:r, :]
+        return self.modes[:, :r] @ self.time_coeff[:r, :]
 
     def modes_for_energy(self, threshold: float = 0.99) -> int:
         """Smallest number of modes capturing ``threshold`` of the energy."""
@@ -100,18 +113,16 @@ class PODResult:
 
 def build_field_matrix(Fx: np.ndarray, Fz: np.ndarray, mode: str
                        ) -> tuple[np.ndarray, FieldInfo]:
-    """Build the (n_snapshots, n_points) matrix POD will be applied to.
+    """Build the (n_points, n_snapshots) matrix POD will be applied to.
 
     Parameters
     ----------
-    Fx, Fz : ndarray, shape (n_rows, n_sections)
+    Fx, Fz : ndarray, shape (n_sections, n_snapshots)
         Edgewise and flapwise force time series.
     mode : {"fx", "fz", "combined"}
         - "fx" or "fz": that component alone, n_points = n_sections
-        - "combined": Fx and Fz concatenated along the spatial axis, each
-          scaled by its own overall standard deviation so that both
-          components contribute on a comparable footing.
-          n_points = 2 * n_sections.
+        - "combined": Fx and Fz concatenated along the spatial axis,
+           n_points = 2 * n_sections.
 
     Returns
     -------
@@ -126,32 +137,30 @@ def build_field_matrix(Fx: np.ndarray, Fz: np.ndarray, mode: str
     if mode == "fz":
         return Fz, FieldInfo(kind="single", component="Fz")
     if mode == "combined":
-        sx, sz = Fx.std(), Fz.std()
-        field = np.vstack([Fx / sx, Fz / sz])
-        return field, FieldInfo(kind="combined", n=Fx.shape[0],
-                                scale_x=sx, scale_z=sz)
+        field = np.vstack([Fx, Fz])
+        return field, FieldInfo(kind="combined", n=Fx.shape[0])
     raise ValueError(f"Unknown field option: {mode!r} "
                      f"(use one of {FIELD_OPTIONS}).")
 
 
-def compute_pod(field: np.ndarray) -> PODResult:
-    """POD of a snapshot set via the direct (economy SVD) method.
+def compute_pod(fluctuation: np.ndarray) -> PODResult:
+    """POD of a fluctuation field via the direct (economy SVD) method.
+
+    No mean removal or scaling is done here -- prepare the input with
+    :class:`viv_rom.pod.preprocessing.Preprocessor`.
 
     Parameters
     ----------
-    field : ndarray, shape (n_snapshots, n_points)
-        Rows are time snapshots, columns are spatial points.
+    fluctuation : ndarray, shape (n_points, n_snapshots)
+        Rows are spatial points, columns are time snapshots.
     """
-    D = np.asarray(field, dtype=float)  # (n_points, n_snapshots)
-    mean_field = D.mean(axis=1, keepdims=True)
-    D_fluc = D - mean_field
+    D = np.asarray(fluctuation, dtype=float)
 
-    # Economy SVD:  D_fluc = Phi @ diag(sigma) @ PsiT
-    Phi, sigma, PsiT = np.linalg.svd(D_fluc, full_matrices=False)
+    # Economy SVD:  D = Phi @ diag(sigma) @ PsiT
+    Phi, sigma, PsiT = np.linalg.svd(D, full_matrices=False)
 
     energy_frac = sigma**2 / np.sum(sigma**2)
     return PODResult(
-        mean=mean_field.ravel(),
         modes=Phi,
         sigma=sigma,
         energy_frac=energy_frac,

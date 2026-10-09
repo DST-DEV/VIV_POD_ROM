@@ -5,6 +5,7 @@ import argparse
 
 from viv_rom.cli_common import add_case_arguments, case_kwargs, setup_runtime
 from viv_rom.pod.config import PODConfig
+from viv_rom.pod.normalization import available_normalizers
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
@@ -19,6 +20,16 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         default=default_config.station_y,
                         help="spanwise position [m] for time-series/orbit "
                              "plots")
+    parser.add_argument("--normalization", nargs="*", default=[],
+                        choices=available_normalizers(), metavar="NAME",
+                        help="optional normalization(s) applied before mean "
+                             f"removal and POD, any of "
+                             f"{', '.join(available_normalizers())} "
+                             "(default: none)")
+    parser.add_argument("--air-density", type=float,
+                        default=default_config.air_density,
+                        help="air density [kg/m^3] for dynamic-pressure "
+                             "scaling (default: %(default)s)")
     parser.add_argument("--no-power-check", action="store_true",
                         help="skip the physical power cross-check")
 
@@ -28,7 +39,8 @@ def run_from_args(args: argparse.Namespace) -> int:
     config = PODConfig(
         **case_kwargs(args), field=args.field,
         n_modes_show=args.n_modes_show, station_y=args.station_y,
-        do_power_check=not args.no_power_check)
+        do_power_check=not args.no_power_check,
+        normalization=tuple(args.normalization), air_density=args.air_density)
 
     from viv_rom.pod.pipeline import run  # heavy import, deferred
     run(config, output_dir=args.output_dir)

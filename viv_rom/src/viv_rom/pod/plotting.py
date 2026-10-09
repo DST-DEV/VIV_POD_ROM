@@ -5,7 +5,7 @@ not save or close it; see :func:`viv_rom.pipeline.write_figures` for that.
 """
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from typing import Callable, Iterable, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -41,11 +41,14 @@ def plot_energy_spectrum(pod: PODResult, n_show: int = 20) -> Figure:
 
 
 def plot_spatial_modes(y: np.ndarray, pod: PODResult, field_info: FieldInfo,
-                       motion: ForcedMotion, n_show: int = 4) -> Figure:
+                       motion: ForcedMotion, n_show: int = 4,
+                       normalization: Sequence[str] = ()) -> Figure:
     """Leading spatial POD modes with the forced-motion mode shape overlaid.
 
-    For a combined Fx/Fz decomposition the modes are split back into their
-    components (using the stored scaling factors) on separate axes.
+    For a combined Fx/Fz decomposition the modes are split into their
+    components on separate axes. The modes are unit-norm in the space the POD
+    was computed in; if a normalisation was used it is named in the figure
+    title (the modes are *not* un-normalised).
     """
     n_show = min(n_show, pod.modes.shape[1])
 
@@ -70,10 +73,10 @@ def plot_spatial_modes(y: np.ndarray, pod: PODResult, field_info: FieldInfo,
             ax.plot(y, phi_x, label=lbl)
             ax2.plot(y, phi_z, label=lbl)
         ax2.set_xlabel("Spanwise station y [m]")
-        ax2.set_ylabel("Fz-part mode shape [N/m, rescaled]")
+        ax2.set_ylabel("Fz-part mode shape [-]")
         ax2.set_title("Flapwise (Fz) component")
         ax2.legend(fontsize=8)
-        ax.set_ylabel("Fx-part mode shape [N/m, rescaled]")
+        ax.set_ylabel("Fx-part mode shape [-]")
         ax.set_title("Edgewise (Fx) component")
         ax.grid(alpha=.8, zorder=0)
         ax2.grid(alpha=.8, zorder=0)
@@ -86,6 +89,8 @@ def plot_spatial_modes(y: np.ndarray, pod: PODResult, field_info: FieldInfo,
 
     ax.set_xlabel("Spanwise station y [m]")
     ax.legend(fontsize=8)
+    if normalization:
+        fig.suptitle("normalization: " + ", ".join(normalization), fontsize=9)
     fig.tight_layout()
     return fig
 
@@ -134,10 +139,14 @@ def plot_temporal_coefficients(t: np.ndarray, pod: PODResult, dt: float,
 
 
 def plot_reconstruction(y: np.ndarray, t: np.ndarray, D_full: np.ndarray,
-                        pod: PODResult, field_info: FieldInfo,
+                        reconstruct: Callable[[int], np.ndarray],
+                        field_info: FieldInfo,
                         station: int = 0,
                         r_values: Iterable[int] = (1, 2, 4)) -> Figure:
     """Compare truncated POD reconstructions with the original field.
+
+    ``reconstruct(r)`` must return the rank-``r`` field in physical units
+    (see :class:`~viv_rom.pod.preprocessing.PhysicalReconstructor`).
 
     Left: time history at spanwise index ``station``. Right: spanwise
     distribution at the final snapshot.
@@ -149,7 +158,7 @@ def plot_reconstruction(y: np.ndarray, t: np.ndarray, D_full: np.ndarray,
         ax2.plot(y, D_full[:, -1], "k", lw=1.5, label="original")
 
         for r in r_values:
-            D_rec = pod.reconstruct(r)
+            D_rec = reconstruct(r)
             ax1.plot(t, D_rec[station, :], lw=1, label=f"{r} mode(s)")
             ax2.plot(y, D_rec[:, -1], lw=1, label=f"{r} mode(s)")
 
@@ -178,7 +187,7 @@ def plot_reconstruction(y: np.ndarray, t: np.ndarray, D_full: np.ndarray,
         axes[1, 1].plot(y, fz_full[:, -1], "k", lw=1.5, label="original")
 
         for r in r_values:
-            fx_rec, fz_rec = field_info.split(pod.reconstruct(r))
+            fx_rec, fz_rec = field_info.split(reconstruct(r))
             axes[0, 0].plot(t, fx_rec[station, :], lw=1, label=f"{r} mode(s)")
             axes[1, 0].plot(t, fz_rec[station, :], lw=1, label=f"{r} mode(s)")
             axes[0, 1].plot(y, fx_rec[:, -1], lw=1, label=f"{r} mode(s)")
@@ -204,7 +213,8 @@ def plot_reconstruction(y: np.ndarray, t: np.ndarray, D_full: np.ndarray,
 
 
 def plot_force_orbit(t: np.ndarray, Fx: np.ndarray, Fz: np.ndarray,
-                     pod: PODResult, field_info: FieldInfo, station: int = 0,
+                     reconstruct: Callable[[int], np.ndarray],
+                     field_info: FieldInfo, station: int = 0,
                      r_values: Sequence[int] = (2, 4)) -> Figure:
     """Sectional-force orbit (Fx vs. Fz) at one station.
 
@@ -230,7 +240,7 @@ def plot_force_orbit(t: np.ndarray, Fx: np.ndarray, Fz: np.ndarray,
     fig.colorbar(sc, ax=ax, label="time [s]")
 
     for r in r_values:
-        Fx_rec, Fz_rec = field_info.split(pod.reconstruct(r))
+        Fx_rec, Fz_rec = field_info.split(reconstruct(r))
         ax.plot(Fx_rec[station, :], Fz_rec[station, :], lw=1.2, alpha=.8,
                 label=f"{r} mode(s)")
 

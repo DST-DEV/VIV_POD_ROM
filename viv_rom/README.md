@@ -39,6 +39,24 @@ Shortcuts `viv-pod` and `viv-spectral`, and `python -m viv_rom.pod` /
 
 `analyse` never plots or writes files; `write_figures` and `run` do.
 
+## POD preprocessing and normalization
+
+`analyse` prepares the snapshot matrix in two separate, explicit steps (`viv_rom/pod/preprocessing.py`): optional **normalization**, then **mean removal**. `compute_pod` only does the SVD of the prepared fluctuation field.
+Normalization is off by default.
+
+| name | factor | effect |
+|---|---|---|
+| `dynamic_pressure` | `F / q`, `q = 0.5 rho U^2` | removes the wind-speed scaling, so cases at different `U` are comparable |
+| `work` | `F * phi(y) * A * omega` | weights sections by the prescribed velocity amplitude: energy then measures contribution to the energy injection (field in W/m) |
+
+    viv pod ... --normalization dynamic_pressure work     # CLI (default: none)
+
+    PODConfig.from_case("a01_p85_i50", normalization=())                  # none
+    PODConfig.from_case("a01_p85_i50", normalization=("dynamic_pressure",))
+    PODConfig.from_case("a01_p85_i50", normalization=(WorkWeightNormalizer(floor=1e-2),))
+
+Modes, singular values and temporal coefficients live in the normalized space; `result.reconstruct(r)` returns the rank-`r` field back in N/m. To add a strategy, implement `Normalizer.scales(ctx)` and decorate it with `@register_normalizer("name")` -- nothing else changes.
+
 ## Conventions
 
 * Sectional fields (`Fx`, `Fz`, POD snapshot matrices) have shape
