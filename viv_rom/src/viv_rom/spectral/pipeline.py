@@ -141,39 +141,68 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
         forcing_response=forcing_response, cycle_energy=cycle_energy)
 
 
-def log_summary(result: SpectralAnalysisResult, config: SpectralConfig
-                ) -> None:
-    """Log the per-station table and the sweep results."""
-    logger.info("\n--- Dominant frequencies by station ---")
-    logger.info("%9s %9s %8s %12s %12s", "component", "station", "y [m]",
-                "f_peak [Hz]", "f/f_forcing")
+SUMMARY_FILENAME = "spectral_summary.txt"
+
+
+def spectral_summary_text(result: SpectralAnalysisResult,
+                          config: SpectralConfig) -> str:
+    """The text summary of an analysis as one string (no I/O).
+
+    This is the single source for both the console output and
+    ``spectral_summary.txt``.
+    """
+    lines = [f"--- Spectral summary: case {config.case}, "
+             f"u = {config.wind_speed} m/s ---",
+             f"frame = '{result.frame.name}', field = '{config.field}', "
+             f"f_forcing = {config.f_forcing} Hz, "
+             f"{len(result.t)} snapshots spanning ~{result.n_periods:.1f} "
+             f"forcing periods",
+             "",
+             "--- Dominant frequencies by station ---",
+             f"{'component':>9} {'station':>9} {'y [m]':>8} "
+             f"{'f_peak [Hz]':>12} {'f/f_forcing':>12}"]
     # for key, peaks in result.station_peaks.items():
     #     for st, f_peak in zip(config.stations, peaks):
-    #         logger.info("%9s %9d %8.1f %12.4f %12.3f", key, st,
-    #                     result.y[st], f_peak, f_peak / config.f_forcing)
+    #         lines.append(f"{key:>9} {st:9d} {result.y[st]:8.1f} "
+    #                      f"{f_peak:12.4f} {f_peak / config.f_forcing:12.3f}")
 
     if result.forcing_response is not None:
-        logger.info("\n%s", "\n".join(result.forcing_response.summary_lines(
-            config.stations, result.frame.labels)))
+        lines += [""] + result.forcing_response.summary_lines(
+            config.stations, result.frame.labels)
     if result.cycle_energy is not None:
-        logger.info("\n%s", "\n".join(
-            result.cycle_energy.summary_lines(config.stations)))
+        lines += [""] + result.cycle_energy.summary_lines(config.stations)
 
-    if result.sweep is None:
-        return
-    logger.info("\n--- Frequency sweep over U for case '%s' "
-                "(field = '%s') ---", config.case,
-                config.effective_sweep_field)
-    sweep = result.sweep
-    if len(sweep.wind_speeds) == 0:
-        logger.info("  No files found for the requested sweep. "
-                    "Skipping sweep plot.")
-        return
-    for U, f in zip(sweep.wind_speeds, sweep.f_dom):
-        locked = abs(f - config.f_forcing) < 0.05 * config.f_forcing
-        logger.info("  U = %5.1f m/s : f_dom = %.4f Hz (%.2f x forcing)%s",
-                    U, f, f / config.f_forcing,
-                    "  <-- locked to forcing" if locked else "")
+    if result.sweep is not None:
+        lines += ["", f"--- Frequency sweep over U for case '{config.case}' "
+                      f"(field = '{config.effective_sweep_field}') ---"]
+        sweep = result.sweep
+        if len(sweep.wind_speeds) == 0:
+            lines.append("  No files found for the requested sweep. "
+                         "Skipping sweep plot.")
+        for U, f in zip(sweep.wind_speeds, sweep.f_dom):
+            locked = abs(f - config.f_forcing) < 0.05 * config.f_forcing
+            lines.append(
+                f"  U = {U:5.1f} m/s : f_dom = {f:.4f} Hz "
+                f"({f / config.f_forcing:.2f} x forcing)"
+                + ("  <-- locked to forcing" if locked else ""))
+    return "\n".join(lines)
+
+
+def log_summary(result: SpectralAnalysisResult, config: SpectralConfig
+                ) -> None:
+    """Print the text summary to the console (via the logger)."""
+    logger.info("\n%s", spectral_summary_text(result, config))
+
+
+def write_summary(result: SpectralAnalysisResult, config: SpectralConfig,
+                  output_dir: Path) -> Path:
+    """Save the text summary to ``output_dir / spectral_summary.txt``."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / SUMMARY_FILENAME
+    path.write_text(spectral_summary_text(result, config) + "\n",
+                    encoding="utf-8")
+    return path
 
 
 def write_figures(result: SpectralAnalysisResult, config: SpectralConfig,
@@ -244,10 +273,12 @@ def write_figures(result: SpectralAnalysisResult, config: SpectralConfig,
 
 def run(config: SpectralConfig, output_dir: Path | None = None
         ) -> SpectralAnalysisResult:
-    """Analyse a case, log a summary and write the figures."""
+    """Analyse a case, print and save the summary, write the figures."""
     output_dir = Path(output_dir or config.default_output_dir)
     result = analyse(config)
     log_summary(result, config)
+    summary_path = write_summary(result, config, output_dir)
     write_figures(result, config, output_dir)
-    logger.info("\nFigures written to: %s", output_dir.resolve())
+    logger.info("\nSummary written to: %s", summary_path.resolve())
+    logger.info("Figures written to: %s", output_dir.resolve())
     return result

@@ -112,6 +112,9 @@ Results: `result.energy` (`.n_required`, `.modes`, `.mode_totals`,
 
     viv spectral ... --frame motion --field both --response-harmonics 3
 
+`viv spectral` prints its text summary and also saves it as
+`spectral_summary.txt` next to the figures (`-o` folder).
+
 Results: `result.forcing_response` (`.amplitude`, `.phase`, `.explained`) and
 `result.cycle_energy` (`.energy`, `.total`, `.station_stats`, `.total_stats`).
 `motion` and `motion_amplitude` are now part of the shared `CaseConfig`.
