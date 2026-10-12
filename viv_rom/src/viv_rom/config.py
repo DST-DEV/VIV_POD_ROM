@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from viv_rom.domain.motion import FIRST_EDGEWISE_MODE, ForcedMotion
 
 _CASE_RE = re.compile(r"^a(?P<amplitude>\d+)_p(?P<pitch>\d+)_i(?P<incl>\d+)$")
 
@@ -40,6 +42,12 @@ class CaseConfig:
         several periods, so lock-in / beating behaviour is visible).
     f_forcing : float
         Prescribed excitation frequency [Hz].
+    motion : ForcedMotion
+        Prescribed motion shapes (direction/velocity along the span).
+    motion_amplitude : float or None
+        Motion amplitude factor ``A`` used wherever the prescribed velocity
+        enters (power, energy injection, work weighting). ``None`` uses
+        ``float(amplitude)`` (case a01 -> A = 1.0).
     """
     data_dir: Path = Path("./data/archive_1D")
     amplitude: int = 1
@@ -49,6 +57,8 @@ class CaseConfig:
     n_skip: int = 1200
     n_last: int | None = None
     f_forcing: float = 0.624
+    motion: ForcedMotion = field(default=FIRST_EDGEWISE_MODE, repr=False)
+    motion_amplitude: float | None = None
 
     def __post_init__(self):
         self.data_dir = Path(self.data_dir)
@@ -57,6 +67,11 @@ class CaseConfig:
     def from_case(cls, case: str, **kwargs):
         """Build a config from a case code, e.g. ``"a01_p85_i50"``."""
         return cls(**parse_case(case), **kwargs)
+
+    @property
+    def effective_motion_amplitude(self) -> float:
+        return (float(self.amplitude) if self.motion_amplitude is None
+                else self.motion_amplitude)
 
     @property
     def case(self) -> str:

@@ -34,9 +34,11 @@ class SweepResult:
 def frequency_sweep(config: SpectralConfig) -> SweepResult:
     """Dominant frequency of the span-integrated force for each wind speed.
 
-    Loops over ``config.u_sweep_list`` (same case, trimming and
+    Loops over ``config.u_sweep_list`` (same case, trimming, frame and
     ``config.sweep_field``) and skips any wind speed whose file is missing.
     """
+    frame = config.frame_instance()
+    sweep_field = config.effective_sweep_field
     found: list[int] = []
     f_dom: list[float] = []
 
@@ -53,7 +55,7 @@ def frequency_sweep(config: SpectralConfig) -> SweepResult:
             continue
 
         data = ff.data
-        component = data.Fz if config.sweep_field == "fz" else data.Fx
+        component = frame.transform(data.y, data.Fx, data.Fz)[sweep_field]
         total = integrate_over_span(data.y, component)
         dt = data.t[1] - data.t[0]
         freqs, psd = compute_psd(total, dt, config.nperseg)

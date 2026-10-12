@@ -14,10 +14,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.figure import Figure
 
+from viv_rom.spectral.cycle_energy import CycleEnergy
+from viv_rom.spectral.forcing_response import ForcingResponse
 from viv_rom.spectral.core import (COMPONENT_LABELS, compute_psd,
                                    compute_spanwise_amplitude,
                                    compute_spanwise_phase,
                                    compute_spanwise_psd, compute_spectrogram)
+
+
+def _label(labels: Mapping[str, str] | None, key: str) -> str:
+    return (labels or COMPONENT_LABELS).get(key, key)
 
 
 def _panels(n: int):
@@ -28,7 +34,8 @@ def _panels(n: int):
 def plot_station_psd(y: np.ndarray, t: np.ndarray,
                      components: Mapping[str, np.ndarray],
                      stations: Sequence[int], f_forcing: float,
-                     n_harmonics: int, nperseg: int | None) -> Figure:
+                     n_harmonics: int, nperseg: int | None,
+                     labels: Mapping[str, str] | None = None) -> Figure:
     """PSD (Welch) at selected stations, one panel per force component.
 
     Integer harmonics of the forcing frequency are drawn as vertical lines.
@@ -46,7 +53,7 @@ def plot_station_psd(y: np.ndarray, t: np.ndarray,
         ax.set_xlim(0, (n_harmonics + 1) * f_forcing)
         ax.set_xlabel("frequency [Hz]")
         ax.set_ylabel("PSD")
-        ax.set_title(COMPONENT_LABELS[key])
+        ax.set_title(_label(labels, key))
         ax.legend(fontsize=7)
 
     fig.tight_layout()
@@ -55,7 +62,8 @@ def plot_station_psd(y: np.ndarray, t: np.ndarray,
 
 def plot_spanwise_map(y: np.ndarray, t: np.ndarray,
                       components: Mapping[str, np.ndarray], f_forcing: float,
-                      n_harmonics: int, nperseg: int | None) -> Figure:
+                      n_harmonics: int, nperseg: int | None,
+                      labels: Mapping[str, str] | None = None) -> Figure:
     """Frequency-vs-span heatmap of log10(PSD), one panel per component."""
     dt = t[1] - t[0]
     fig, axes = _panels(len(components))
@@ -71,7 +79,7 @@ def plot_spanwise_map(y: np.ndarray, t: np.ndarray,
             ax.axhline(h * f_forcing, color="cyan", ls="--", lw=0.8)
         ax.set_xlabel("spanwise station y [m]")
         ax.set_ylabel("frequency [Hz]")
-        ax.set_title(COMPONENT_LABELS[key])
+        ax.set_title(_label(labels, key))
         fig.colorbar(pcm, ax=ax, label="log10(PSD)")
 
     fig.tight_layout()
@@ -81,7 +89,9 @@ def plot_spanwise_map(y: np.ndarray, t: np.ndarray,
 def plot_spanwise_amplitude_map(y: np.ndarray, t: np.ndarray,
                                 components: Mapping[str, np.ndarray],
                                 f_forcing: float, n_harmonics: int,
-                                nperseg: int | None) -> Figure:
+                                nperseg: int | None,
+                                labels: Mapping[str, str] | None = None
+                                ) -> Figure:
     """Frequency-vs-span heatmap of peak amplitude (linear, e.g. N/m).
 
     The "force contribution per frequency" view. A linear colour scale is
@@ -101,7 +111,7 @@ def plot_spanwise_amplitude_map(y: np.ndarray, t: np.ndarray,
             ax.axhline(h * f_forcing, color="cyan", ls="--", lw=0.8)
         ax.set_xlabel("spanwise station y [m]")
         ax.set_ylabel("frequency [Hz]")
-        ax.set_title(f"{COMPONENT_LABELS[key]} amplitude")
+        ax.set_title(f"{_label(labels, key)} amplitude")
         fig.colorbar(pcm, ax=ax, label="peak amplitude [N/m]")
 
     fig.tight_layout()
@@ -111,7 +121,9 @@ def plot_spanwise_amplitude_map(y: np.ndarray, t: np.ndarray,
 def plot_spanwise_phase_map(y: np.ndarray, t: np.ndarray,
                             components: Mapping[str, np.ndarray],
                             f_forcing: float, n_harmonics: int,
-                            mag_threshold_db: float | None) -> Figure:
+                            mag_threshold_db: float | None,
+                            labels: Mapping[str, str] | None = None
+                            ) -> Figure:
     """Frequency-vs-span heatmap of phase [rad], one panel per component.
 
     Phase is only meaningful where there is real spectral content, so bins
@@ -138,7 +150,7 @@ def plot_spanwise_phase_map(y: np.ndarray, t: np.ndarray,
             ax.axhline(h * f_forcing, color="lime", ls="--", lw=0.8)
         ax.set_xlabel("spanwise station y [m]")
         ax.set_ylabel("frequency [Hz]")
-        ax.set_title(f"{COMPONENT_LABELS[key]} phase")
+        ax.set_title(f"{_label(labels, key)} phase")
         cbar = fig.colorbar(pcm, ax=ax, label="phase [rad]")
         cbar.set_ticks([-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi])
         cbar.set_ticklabels([r"$-\pi$", r"$-\pi/2$", "0",
@@ -178,5 +190,82 @@ def plot_frequency_sweep(U_arr: np.ndarray, f_dom: np.ndarray,
     ax.set_ylabel("dominant response frequency [Hz]")
     ax.set_title("Frequency lock-in diagram")
     ax.legend(fontsize=8)
+    fig.tight_layout()
+    return fig
+
+
+def plot_forcing_response(response: ForcingResponse, harmonic: int = 1,
+                          labels: Mapping[str, str] | None = None) -> Figure:
+    """Spanwise amplitude and phase of the force at ``harmonic * f_forcing``.
+
+    Phase is the lead relative to the forced displacement (0: in phase with
+    displacement, +90 deg: with velocity). For the along-motion component
+    ``0 < phase < 180 deg`` means the harmonic injects energy.
+    """
+    h = int(np.flatnonzero(response.harmonics == harmonic)[0])
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+    for key in response.amplitude:
+        lbl = _label(labels, key)
+        ax1.plot(response.y, response.amplitude[key][:, h], label=lbl)
+        ax2.plot(response.y, response.phase_deg(key)[:, h], ".-", ms=3,
+                 label=lbl)
+    f_h = response.frequencies[h]
+    ax1.set_xlabel("Spanwise station y [m]")
+    ax1.set_ylabel("Amplitude [N/m]")
+    ax1.set_title(f"Force amplitude at {harmonic} x f_forcing ({f_h:.3g} Hz)")
+    ax1.legend(fontsize=8)
+    ax1.grid(alpha=.8, zorder=0)
+
+    for level in (-180, -90, 0, 90, 180):
+        ax2.axhline(level, color="gray", lw=.8,
+                    ls="-" if level == 0 else ":")
+    ax2.set_yticks([-180, -90, 0, 90, 180])
+    ax2.set_ylim(-190, 190)
+    ax2.set_xlabel("Spanwise station y [m]")
+    ax2.set_ylabel("Phase lead vs. displacement [deg]")
+    ax2.set_title("Phase (+90 deg = in phase with velocity)")
+    ax2.legend(fontsize=8)
+    ax2.grid(alpha=.8, zorder=0)
+    fig.tight_layout()
+    return fig
+
+
+def plot_cycle_energy(cycle: CycleEnergy, stations: Sequence[int]) -> Figure:
+    """Energy injected per forcing cycle: history and spanwise spread.
+
+    Left: whole-blade and selected-station energy per cycle, each relative to
+    its own mean (stations with negligible injection are skipped). Right: spanwise mean energy per cycle with
+    its +-1 std band over cycles.
+    """
+    stats = cycle.station_stats
+    tot = cycle.total_stats
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+
+    cycles = np.arange(1, cycle.n_cycles + 1)
+    significant = np.abs(stats.mean) >= 1e-2 * np.abs(stats.mean).max()
+    for k in stations:
+        if significant[k]:  # skip stations with practically no injection
+            ax1.plot(cycles, cycle.energy[:, k] / stats.mean[k], ".-", lw=1,
+                     alpha=.8, label=f"y = {cycle.y[k]:.1f} m")
+    if tot.mean != 0:
+        ax1.plot(cycles, cycle.total / tot.mean, "k-o", ms=4, lw=2,
+                 label="blade total")
+    ax1.axhline(1.0, color="gray", lw=.8, ls=":")
+    ax1.set_xlabel("Forcing cycle")
+    ax1.set_ylabel("Energy per cycle / its mean")
+    ax1.set_title(f"Per-cycle energy injection "
+                  f"(blade total CV = {100 * tot.cv:.2f} %)")
+    ax1.legend(fontsize=7)
+    ax1.grid(alpha=.8, zorder=0)
+
+    ax2.plot(cycle.y, stats.mean, "k", lw=1.6, label="mean over cycles")
+    ax2.fill_between(cycle.y, stats.mean - stats.std, stats.mean + stats.std,
+                     color="C0", alpha=.3, label="+-1 std over cycles")
+    ax2.axhline(0, color="gray", lw=.8)
+    ax2.set_xlabel("Spanwise station y [m]")
+    ax2.set_ylabel("Energy per cycle [J/m]")
+    ax2.set_title("Spanwise energy injection per cycle")
+    ax2.legend(fontsize=8)
+    ax2.grid(alpha=.8, zorder=0)
     fig.tight_layout()
     return fig

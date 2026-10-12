@@ -161,8 +161,10 @@ def pod_summary_text(result: PODAnalysisResult, config: PODConfig) -> str:
     pod = result.pod
 
     lines = []
-    lines.append(f"--- POD summary (field = '{config.field}', normalization = "
-                 f"{', '.join(result.preprocessing.normalization_names) or 'none'}) ---")
+    lines.append(
+        f"--- POD summary (field = '{config.field}', normalization = "
+        f"{', '.join(result.preprocessing.normalization_names) or 'none'}) ---"
+        )
     lines.append(
         f"{'mode':>4} {'energy %':>10} {'cum %':>8} "
         f"{'dom. freq [Hz]':>15} {'freq / f_forcing':>17}"

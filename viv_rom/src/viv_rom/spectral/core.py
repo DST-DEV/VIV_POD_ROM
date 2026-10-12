@@ -5,24 +5,27 @@ spanwise spectral maps are returned as ``(n_stations, n_freqs)``.
 """
 from __future__ import annotations
 
+from typing import Mapping
+
 import numpy as np
 # from scipy.signal import ShortTimeFFT, welch
 from scipy.signal import ShortTimeFFT, find_peaks, welch
 from scipy.signal.windows import hann
 
+# Labels of the blade-frame components; other frames bring their own
+# (``ForceFrame.labels``) and the plotting functions accept them.
 COMPONENT_LABELS = {"fx": "Fx (edgewise)", "fz": "Fz (flapwise)"}
 
 
-def select_components(field: str, Fx: np.ndarray, Fz: np.ndarray
+def select_components(field: str, components: Mapping[str, np.ndarray]
                       ) -> dict[str, np.ndarray]:
-    """Map ``"fx"``/``"fz"``/``"both"`` to ``{component key: data}``."""
-    all_components = {"fx": Fx, "fz": Fz}
+    """Pick ``"both"`` (all) or one component from ``{key: data}``."""
     if field == "both":
-        return all_components
-    if field not in all_components:
+        return dict(components)
+    if field not in components:
         raise ValueError(f"Unknown field option: {field!r} "
-                         "(use 'fx', 'fz' or 'both').")
-    return {field: all_components[field]}
+                         f"(use one of {(*components, 'both')}).")
+    return {field: components[field]}
 
 
 def _segment_length(n: int, nperseg: int | None) -> int:

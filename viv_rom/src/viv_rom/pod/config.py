@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
 
 from viv_rom.config import CaseConfig
-from viv_rom.domain.motion import FIRST_EDGEWISE_MODE, ForcedMotion
 from viv_rom.pod.core import FIELD_OPTIONS
 from viv_rom.pod.energy_injection import (resolve_aggregators,
                                           resolve_reference)
@@ -23,16 +22,11 @@ class PODConfig(CaseConfig):
         Sectional force component(s) to include in the POD.
     n_modes_show : int
         Number of leading POD modes to plot/report.
-    motion_amplitude : float or None
-        Motion amplitude factor ``A`` used in the power check. ``None`` uses
-        ``float(amplitude)`` (case a01 -> A = 1.0).
     station_y : float
         Spanwise position [m]; the first section at or beyond it is used for
         the time-series/orbit plots (81 m is the energy-injection peak).
     do_power_check : bool
         Run the physical power cross-check.
-    motion : ForcedMotion
-        Prescribed motion shapes.
     normalization : sequence of (str or Normalizer)
         Optional normalisation applied before mean removal and POD. Empty
         (default) means none. Items are registered names
@@ -63,10 +57,8 @@ class PODConfig(CaseConfig):
     """
     field: str = "combined"
     n_modes_show: int = 4
-    motion_amplitude: float | None = None
     station_y: float = 81.0
     do_power_check: bool = True
-    motion: ForcedMotion = dc_field(default=FIRST_EDGEWISE_MODE, repr=False)
     normalization: tuple[str | Normalizer, ...] = ()
     air_density: float = RHO_AIR
     do_energy_analysis: bool = True
@@ -98,11 +90,6 @@ class PODConfig(CaseConfig):
         """The configured normalisation strategies as instances."""
         return tuple(make_normalizer(n) if isinstance(n, str) else n
                      for n in self.normalization)
-
-    @property
-    def effective_motion_amplitude(self) -> float:
-        return (float(self.amplitude) if self.motion_amplitude is None
-                else self.motion_amplitude)
 
     @property
     def default_output_dir(self):

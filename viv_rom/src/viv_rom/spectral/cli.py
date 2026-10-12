@@ -4,15 +4,23 @@ from __future__ import annotations
 import argparse
 
 from viv_rom.cli_common import add_case_arguments, case_kwargs, setup_runtime
-from viv_rom.spectral.config import SpectralConfig
+from viv_rom.domain.frames import available_frames
+from viv_rom.spectral.config import SpectralConfig, available_fields
 
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     d = SpectralConfig()
     add_case_arguments(parser)
-    parser.add_argument("--field", choices=("fx", "fz", "both"),
+    parser.add_argument("--frame", choices=available_frames(),
+                        default=d.frame,
+                        help="coordinate frame the forces are rotated into "
+                             "before analysis: 'blade' (Fx/Fz) or 'motion' "
+                             "(along/normal to the local motion, "
+                             "fpar/fperp) (default: %(default)s)")
+    parser.add_argument("--field", choices=available_fields(),
                         default=d.field,
-                        help="force component(s) analysed per station")
+                        help="force component(s) analysed per station; "
+                             "must belong to the chosen frame")
     parser.add_argument("--stations", type=int, nargs="+",
                         default=list(d.stations), metavar="IDX",
                         help="spanwise station indices (0 = root) "
@@ -45,15 +53,25 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         default=list(d.u_sweep_list), metavar="U",
                         help="wind speeds [m/s] for the sweep "
                              "(default: 6 ... 22)")
-    parser.add_argument("--sweep-field", choices=("fx", "fz"),
+    parser.add_argument("--sweep-field",
+                        choices=available_fields()[:-1],
                         default=d.sweep_field,
-                        help="component used for the sweep")
+                        help="component used for the sweep "
+                             "(default: first component of the frame)")
+    parser.add_argument("--no-forcing-response", action="store_true",
+                        help="skip amplitude/phase at the forcing frequency")
+    parser.add_argument("--response-harmonics", type=int,
+                        default=d.response_harmonics,
+                        help="harmonics of the forcing frequency fitted for "
+                             "the amplitude/phase")
+    parser.add_argument("--no-cycle-energy", action="store_true",
+                        help="skip the cycle-by-cycle energy injection")
 
 
 def run_from_args(args: argparse.Namespace) -> int:
     setup_runtime()
     config = SpectralConfig(
-        **case_kwargs(args), field=args.field,
+        **case_kwargs(args), frame=args.frame, field=args.field,
         stations=tuple(args.stations), n_harmonics=args.n_harmonics,
         nperseg=args.nperseg, spectrogram_nperseg=args.spectrogram_nperseg,
         do_spanwise_map=not args.no_spanwise_map,
@@ -63,7 +81,10 @@ def run_from_args(args: argparse.Namespace) -> int:
         do_frequency_sweep=not args.no_sweep,
         phase_mask_threshold_db=(None if args.no_phase_mask
                                  else args.phase_mask_db),
-        u_sweep_list=tuple(args.u_sweep), sweep_field=args.sweep_field)
+        u_sweep_list=tuple(args.u_sweep), sweep_field=args.sweep_field,
+        do_forcing_response=not args.no_forcing_response,
+        response_harmonics=args.response_harmonics,
+        do_cycle_energy=not args.no_cycle_energy)
 
     from viv_rom.spectral.pipeline import run  # heavy import, deferred
     run(config, output_dir=args.output_dir)

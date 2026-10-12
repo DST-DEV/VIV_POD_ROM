@@ -22,12 +22,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from viv_rom.domain.data import ForceFieldFile
+from viv_rom.domain.frames import ForceFrame
 from viv_rom.loading import load_case
 from viv_rom.spectral import plotting
 from viv_rom.spectral.config import SpectralConfig
 from viv_rom.spectral.core import (compute_psd,
                                    dominant_peaks,
                                    integrate_over_span, select_components)
+from viv_rom.spectral.cycle_energy import (CycleEnergy,
+                                           cycle_energy_analysis)
+from viv_rom.spectral.forcing_response import (ForcingResponse,
+                                               forcing_frequency_response)
 from viv_rom.spectral.sweep import SweepResult, frequency_sweep
 
 logger = logging.getLogger(__name__)
@@ -41,14 +46,28 @@ class SpectralAnalysisResult:
     ----------
     station_peaks : dict of {"fx"/"fz": ndarray}
         Dominant frequency [Hz] at each of ``config.stations``.
+    frame : ForceFrame
+        Frame the forces were rotated into before analysis.
     sweep : SweepResult or None
         Wind-speed sweep, if requested.
+    forcing_response : ForcingResponse or None
+        Amplitude/phase of the force at the forcing frequency.
+    cycle_energy : CycleEnergy or None
+        Per-cycle energy injection.
     """
     force_file: ForceFieldFile
     dt: float
     n_periods: float
     station_peaks: dict[str, np.ndarray]
+    frame: ForceFrame
     sweep: SweepResult | None = None
+    forcing_response: ForcingResponse | None = None
+    cycle_energy: CycleEnergy | None = None
+
+    def components(self, field: str = "both") -> dict[str, np.ndarray]:
+        """Forces in the analysis frame, ``{key: (n_stations, n_steps)}``."""
+        all_components = self.frame.transform(self.y, self.Fx, self.Fz)
+        return select_components(field, all_components)
 
     @property
     def y(self) -> np.ndarray:
@@ -73,8 +92,10 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
                 config.wind_speed, config.data_dir)
     force_file = load_case(config)
     y, t = force_file.data.y, force_file.data.t
-    components = select_components(config.field, force_file.data.Fx,
-                                   force_file.data.Fz)
+    frame = config.frame_instance()
+    components = select_components(
+        config.field,
+        frame.transform(y, force_file.data.Fx, force_file.data.Fz))
 
     n_sections = len(y)
     if config.stations and max(config.stations) >= n_sections:
@@ -99,9 +120,25 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
 
     sweep = frequency_sweep(config) if config.do_frequency_sweep else None
 
-    return SpectralAnalysisResult(force_file=force_file, dt=dt,
-                                  n_periods=n_periods,
-                                  station_peaks=station_peaks, sweep=sweep)
+    forcing_response = None
+    if config.do_forcing_response:
+        forcing_response = forcing_frequency_response(
+            components, y, t, config.f_forcing, config.response_harmonics)
+
+    cycle_energy = None
+    if config.do_cycle_energy:
+        amplitude = config.effective_motion_amplitude
+        omega = 2 * np.pi * config.f_forcing
+        cycle_energy = cycle_energy_analysis(
+            force_file.data.Fx, force_file.data.Fz,
+            vx=config.motion.velocity("x", y, t, amplitude, omega),
+            vz=config.motion.velocity("z", y, t, amplitude, omega),
+            y=y, t=t, f_forcing=config.f_forcing)
+
+    return SpectralAnalysisResult(
+        force_file=force_file, dt=dt, n_periods=n_periods,
+        station_peaks=station_peaks, frame=frame, sweep=sweep,
+        forcing_response=forcing_response, cycle_energy=cycle_energy)
 
 
 def log_summary(result: SpectralAnalysisResult, config: SpectralConfig
@@ -115,10 +152,18 @@ def log_summary(result: SpectralAnalysisResult, config: SpectralConfig
     #         logger.info("%9s %9d %8.1f %12.4f %12.3f", key, st,
     #                     result.y[st], f_peak, f_peak / config.f_forcing)
 
+    if result.forcing_response is not None:
+        logger.info("\n%s", "\n".join(result.forcing_response.summary_lines(
+            config.stations, result.frame.labels)))
+    if result.cycle_energy is not None:
+        logger.info("\n%s", "\n".join(
+            result.cycle_energy.summary_lines(config.stations)))
+
     if result.sweep is None:
         return
     logger.info("\n--- Frequency sweep over U for case '%s' "
-                "(field = '%s') ---", config.case, config.sweep_field)
+                "(field = '%s') ---", config.case,
+                config.effective_sweep_field)
     sweep = result.sweep
     if len(sweep.wind_speeds) == 0:
         logger.info("  No files found for the requested sweep. "
@@ -140,8 +185,10 @@ def write_figures(result: SpectralAnalysisResult, config: SpectralConfig,
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     y, t = result.y, result.t
-    components = select_components(config.field, result.Fx, result.Fz)
-    common = dict(f_forcing=config.f_forcing, n_harmonics=config.n_harmonics)
+    components = result.components(config.field)
+    labels = result.frame.labels
+    common = dict(f_forcing=config.f_forcing, n_harmonics=config.n_harmonics,
+                  labels=labels)
 
     figures = {"01_station_psd": plotting.plot_station_psd(
         y, t, components, config.stations, nperseg=config.nperseg, **common)}
@@ -160,21 +207,30 @@ def write_figures(result: SpectralAnalysisResult, config: SpectralConfig,
                 mag_threshold_db=config.phase_mask_threshold_db, **common))
 
     if config.do_spectrogram:
-        # Fx is always shown; Fz additionally when both components are
-        # analysed (behaviour of the original script).
-        spectrogram_signals = {"fx": result.Fx}
-        if config.field == "both":
-            spectrogram_signals["fz"] = result.Fz
-        for key, data in spectrogram_signals.items():
+        # The frame's first component is always shown; the second
+        # additionally when both are analysed (behaviour of the original
+        # script, where these were Fx and Fz).
+        all_components = result.components("both")
+        keys = list(all_components)
+        spectrogram_keys = keys if config.field == "both" else keys[:1]
+        for key in spectrogram_keys:
             figures[f"03_spectrogram_{key}"] = plotting.plot_spectrogram(
-                t, integrate_over_span(y, data), config.f_forcing,
-                config.n_harmonics,
-                title=f"Spectrogram of span-integrated {key.capitalize()}",
+                t, integrate_over_span(y, all_components[key]),
+                config.f_forcing, config.n_harmonics,
+                title=("Spectrogram of span-integrated "
+                       f"{labels.get(key, key)}"),
                 nperseg=config.spectrogram_nperseg)
 
     if result.sweep is not None and len(result.sweep.wind_speeds) > 0:
         figures["04_frequency_sweep"] = plotting.plot_frequency_sweep(
             result.sweep.wind_speeds, result.sweep.f_dom, config.f_forcing)
+
+    if result.forcing_response is not None:
+        figures["05_forcing_response"] = plotting.plot_forcing_response(
+            result.forcing_response, harmonic=1, labels=labels)
+    if result.cycle_energy is not None:
+        figures["06_cycle_energy"] = plotting.plot_cycle_energy(
+            result.cycle_energy, config.stations)
 
     paths = []
     for name, fig in figures.items():

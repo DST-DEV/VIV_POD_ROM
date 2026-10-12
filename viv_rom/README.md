@@ -82,6 +82,40 @@ Two further POD diagnostics run in `analyse` (both configurable on
 Results: `result.energy` (`.n_required`, `.modes`, `.mode_totals`,
 `.curves`) and `result.phases` (`.phase_deg`, `.amplitude`, `.explained`).
 
+## Spectral: motion-aligned frame, force at the forcing frequency, cycle energy
+
+* **Frame** (`viv_rom/domain/frames.py`, `--frame {blade,motion}`,
+  `SpectralConfig(frame=...)`). Forces are rotated into the chosen frame
+  *before* every spectral analysis (PSDs, maps, spectrogram, sweep, and the
+  analyses below). `blade` (default) is the CFD `Fx`/`Fz`; `motion` rotates
+  each station into `F_par` (along the local direction of motion, from the
+  un-normalised mode shapes) and `F_perp` (+90 deg from it in the (x, z)
+  plane); `--field` and `--sweep-field` then take `fpar`/`fperp`. The
+  rotation is orthonormal and `F_par` carries all of the sectional power.
+  New frames: implement `ForceFrame` (`name`, `labels`, `transform`) and
+  `@register_frame("name")`.
+* **Force at the forcing frequency** (`spectral/forcing_response.py`,
+  `--response-harmonics H`, `--no-forcing-response`). Joint least-squares
+  fit of `f_forcing` and harmonics `1..H` per station and component: amplitude
+  [N/m], phase and fit R^2. Phase is the lead relative to the forced
+  displacement `sin(omega t)` (0: displacement, +90 deg: velocity). For
+  `F_par` the fundamental injects `0.5 * A_1 * |v| * sin(phase)` of mean power:
+  `0 < phase < 180 deg` excites, `-180 < phase < 0` damps; harmonics >= 2
+  inject nothing over whole periods.
+* **Cycle-by-cycle energy injection** (`spectral/cycle_energy.py`,
+  `--no-cycle-energy`). Energy `E_c(y)` [J/m] and blade total [J] injected in
+  each complete forcing cycle (frame independent: `p = Fx*vx + Fz*vz`), and how
+  much it fluctuates: coefficient of variation, relative range, linear drift
+  vs. detrended spread (transient vs. real fluctuation) and the number of
+  damping cycles, per station and for the blade. Needs several complete cycles
+  (with fewer than 3 the spread is flagged unreliable).
+
+    viv spectral ... --frame motion --field both --response-harmonics 3
+
+Results: `result.forcing_response` (`.amplitude`, `.phase`, `.explained`) and
+`result.cycle_energy` (`.energy`, `.total`, `.station_stats`, `.total_stats`).
+`motion` and `motion_amplitude` are now part of the shared `CaseConfig`.
+
 ## Conventions
 
 * Sectional fields (`Fx`, `Fz`, POD snapshot matrices) have shape
@@ -95,11 +129,13 @@ Results: `result.energy` (`.n_required`, `.modes`, `.mode_totals`,
     viv_rom/
       config.py  loading.py  signal_utils.py    shared by all methods
       cli.py  cli_common.py                      `viv <method>` umbrella CLI
-      domain/   data.py, motion.py               data containers, forced motion
+      domain/   data.py, motion.py, frames.py     data containers, forced motion,
+                                                 force frames
       readers/  cfd_reader.py                    HyReader (.1HY files)
       pod/      config core normalization preprocessing energy_injection phase
                 power plotting pipeline cli
-      spectral/ config core plotting sweep pipeline cli
+      spectral/ config core forcing_response cycle_energy plotting sweep pipeline
+                cli
 
 ## Adding a method (e.g. SPOD)
 

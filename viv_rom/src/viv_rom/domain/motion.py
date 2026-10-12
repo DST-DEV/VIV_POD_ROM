@@ -42,6 +42,27 @@ class ForcedMotion:
         shape = np.polyval(coeff, np.asarray(y) - self.y_offset)
         return shape / np.max(shape) if normalize else shape
 
+    def direction(self, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Unit vector of the motion in the (x, z) plane at each station.
+
+        Returns ``(c_x, c_z)``, each of shape ``(len(y),)``, with
+        ``c_x**2 + c_z**2 == 1``: the direction in which the section moves
+        (sign kept), built from the *un-normalised* mode shapes so that the
+        relative size of the edgewise and flapwise motion is preserved.
+
+        Raises
+        ------
+        ValueError
+            If the motion vanishes at a station (direction undefined).
+        """
+        px = self.modeshape("Fx", y, normalize=False)
+        pz = self.modeshape("Fz", y, normalize=False)
+        norm = np.hypot(px, pz)
+        if np.any(norm == 0):
+            raise ValueError("The prescribed motion vanishes at some "
+                             "station; its direction is undefined.")
+        return px / norm, pz / norm
+
     def velocity_amplitude(self, component: str, y: np.ndarray,
                            amplitude: float, omega: float) -> np.ndarray:
         """Amplitude of the prescribed velocity [m/s], shape (len(y),).
