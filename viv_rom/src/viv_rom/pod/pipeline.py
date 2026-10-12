@@ -27,7 +27,8 @@ from viv_rom.domain.data import ForceFieldFile
 from viv_rom.pod.core import (FieldInfo, PODResult, build_field_matrix,
                               compute_pod)
 from viv_rom.pod.energy_injection import (EnergyInjection,
-                                          energy_injection_analysis)
+                                          energy_injection_analysis,
+                                          work_alignment_weights)
 from viv_rom.pod.normalization import NormalizationContext
 from viv_rom.pod.phase import (HarmonicPhases, canonical_signs,
                                harmonic_phase_analysis)
@@ -144,10 +145,14 @@ def analyse(config: PODConfig) -> PODAnalysisResult:
 
     phases = None
     if config.phase_modes > 0:
+        # orient the modes by their work alignment with the motion, so that
+        # a fundamental phase of +90 deg means energy injection
+        work_weights = work_alignment_weights(
+            y, config.motion, field_info, preprocessing.scaling.factors)
         phases = harmonic_phase_analysis(
             time_coeff=pod.time_coeff, t=t, f_forcing=config.f_forcing,
             n_modes=config.phase_modes, n_harmonics=config.phase_harmonics,
-            signs=canonical_signs(pod.modes))
+            signs=canonical_signs(pod.modes, work_weights))
 
     return PODAnalysisResult(
         force_file=force_file, field=field, field_info=field_info,

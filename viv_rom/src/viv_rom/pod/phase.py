@@ -17,9 +17,14 @@ Reference and sign convention
   ``t`` the absolute simulation time. ``phi_1 = 0``: in phase with the
   displacement; ``+90 deg``: in phase with the velocity.
 * A POD mode and its coefficient are only defined up to a common sign. To
-  make phases reproducible, each mode is oriented so that the largest-
-  magnitude entry of its spatial mode is positive (see
-  :func:`canonical_signs`); the phase then describes ``+phi_k(y) * a_k(t)``.
+  make phases reproducible *and* physically readable, each mode is oriented
+  by :func:`canonical_signs` so that ``+phi_k(y) * a_k(t)`` has positive work
+  alignment with the motion: with the weights of
+  :func:`viv_rom.pod.energy_injection.work_alignment_weights` a mode whose
+  fundamental has ``phi_1 = +90 deg`` then injects energy and
+  ``phi_1 = -90 deg`` damps (``0 < phi_1 < 180 deg``: injection). Without
+  weights the largest-magnitude entry of the spatial mode is made positive,
+  which carries no such meaning.
 """
 from __future__ import annotations
 
@@ -30,16 +35,48 @@ import numpy as np
 from viv_rom.signal_utils import fit_harmonics
 
 
-def canonical_signs(modes: np.ndarray) -> np.ndarray:
-    """Sign (+1/-1) making the largest-|.| entry of each mode positive.
+def canonical_signs(modes: np.ndarray,
+                    work_weights: np.ndarray | None = None,
+                    rtol: float = 1e-6) -> np.ndarray:
+    """Sign (+1/-1) that orients each mode for a reproducible phase.
 
     Parameters
     ----------
     modes : ndarray, shape (n_points, n_modes)
+        Spatial POD modes (in the space they were computed in).
+    work_weights : ndarray, shape (n_points,), optional
+        Weights ``w`` such that ``w @ mode`` is proportional to the
+        span-integrated work factor of the mode (see
+        :func:`viv_rom.pod.energy_injection.work_alignment_weights`). With
+        them, each mode is flipped so that ``w @ mode > 0``: the sign is
+        decided by how the whole mode aligns with the *motion*, not by one
+        entry that may sit where the section hardly moves (or only in the
+        other of the edgewise/flapwise directions). A mode with (numerically)
+        no net work alignment (``|w @ mode| <= rtol * sum|w * mode|``) falls
+        back to the sign of its largest *work-weighted* entry ``w * mode``.
+        Without weights, the largest-magnitude entry of the mode is made
+        positive.
+    rtol : float
+        Relative tolerance below which the net alignment counts as zero.
     """
-    idx = np.argmax(np.abs(modes), axis=0)
-    picked = modes[idx, np.arange(modes.shape[1])]
-    return np.where(picked < 0, -1.0, 1.0)
+    modes = np.asarray(modes, dtype=float)
+    cols = np.arange(modes.shape[1])
+    if work_weights is None:
+        # Choose sign so that largest value of the mode shape is positive
+        picked = modes[np.argmax(np.abs(modes), axis=0), cols]
+        return np.where(picked < 0, -1.0, 1.0)
+
+    w = np.asarray(work_weights, dtype=float)
+    if w.shape != (modes.shape[0],):
+        raise ValueError(f"work_weights must have shape "
+                         f"({modes.shape[0]},), got {w.shape}.")
+    weighted = modes * w[:, None]  # per-entry work factor
+    net = weighted.sum(axis=0)
+    fallback = weighted[np.argmax(np.abs(weighted), axis=0),
+                        cols]  # Fallback if net work of a mode is near zero
+    decisive = np.where(np.abs(net) > rtol * np.abs(weighted).sum(axis=0),
+                        net, fallback)
+    return np.where(decisive < 0, -1.0, 1.0)
 
 
 @dataclass(frozen=True, eq=False)

@@ -35,6 +35,7 @@ from typing import Callable, Mapping, Protocol, Sequence
 
 import numpy as np
 
+from viv_rom.domain.motion import ForcedMotion
 from viv_rom.pod.core import FieldInfo
 from viv_rom.pod.power import sectional_power
 
@@ -66,6 +67,52 @@ class FieldModel(Protocol):
 
     def mode(self, k: int) -> np.ndarray:
         """Mode ``k`` (0-based) alone, shape ``(n_points, n_t)``."""
+
+
+def trapezoid_weights(y: np.ndarray) -> np.ndarray:
+    """Quadrature weights ``q`` with ``q @ f == trapezoid(f, y)``."""
+    y = np.asarray(y, dtype=float)
+    dy = np.diff(y)
+    q = np.zeros_like(y)
+    q[:-1] += dy / 2
+    q[1:] += dy / 2
+    return q
+
+
+def work_alignment_weights(y: np.ndarray, motion: ForcedMotion,
+                           field_info: FieldInfo,
+                           scaling: np.ndarray | None = None) -> np.ndarray:
+    """Weights ``w`` turning a spatial mode into its work factor.
+
+    The fundamental of mode ``k`` with coefficient ``A sin(omega t + phi)``
+    injects, over whole periods,
+
+        ``E_k ~ A * sin(phi) * sum_i integral phi_k^i(y) * psi_i(y) dy``
+
+    (``psi_i`` the motion shape of component ``i``; positive constants
+    dropped). For a mode computed in a normalised space (field scaled by
+    ``scaling`` per point) the physical mode is ``phi / scaling``, hence
+
+        ``w = quad * psi / scaling``,   work factor ``= w @ phi_k``.
+
+    With quad being the trapezoid weights (see :func:`trapezoid_weights`).
+    The sign of ``w @ phi_k`` is therefore the sign of the energy a
+    ``+90 deg`` coefficient injects.
+
+    Parameters
+    ----------
+    y : ndarray, shape (n_sections,)
+    motion : ForcedMotion
+    field_info : FieldInfo
+        Layout of the snapshot matrix (single Fx/Fz or combined).
+    scaling : ndarray, shape (n_points,), optional
+        Normalisation factors applied to the field (default: none).
+    """
+    q = trapezoid_weights(y)
+    psi = field_info.layout(motion.modeshape("Fx", y, normalize=False),
+                            motion.modeshape("Fz", y, normalize=False))
+    w = field_info.layout(q, q) * psi
+    return w if scaling is None else w / np.asarray(scaling, dtype=float)
 
 
 def resolve_aggregators(spec: Sequence[str | StationErrorAggregator]

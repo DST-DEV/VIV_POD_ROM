@@ -73,9 +73,14 @@ Two further POD diagnostics run in `analyse` (both configurable on
 * **Harmonic phase** (`pod/phase.py`, `--phase-modes K --phase-harmonics H`).
   Least-squares fit of `a_k(t)` with the forcing frequency and harmonics
   `1..H`. Phase is the lead relative to the forced displacement
-  `sin(omega t)` (0 deg: displacement, +90 deg: velocity). Modes are
-  oriented so the largest entry of the spatial mode is positive, since the
-  sign of a POD mode is arbitrary. `phase_modes=0` disables it.
+  `sin(omega t)` (0 deg: displacement, +90 deg: velocity). The sign of a POD
+  mode is arbitrary, so each mode is oriented by its work alignment with the
+  motion (`canonical_signs` with `work_alignment_weights`): the sign of
+  `sum_i integral phi_k^i(y) psi_i(y) dy` over the physical mode shape is made
+  positive, so a fundamental phase in (0, 180 deg) means the mode injects
+  energy (+90 deg: maximum) and in (-180, 0) it damps. This replaces the
+  "largest entry positive" rule, which can be decided at a station that hardly
+  moves. `phase_modes=0` disables it.
 
     viv pod ... --energy-metrics rms max --energy-tolerance 0.01 --phase-modes 4
 
