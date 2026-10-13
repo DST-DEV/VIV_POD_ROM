@@ -5,8 +5,10 @@ Kept free of matplotlib and pipeline imports so ``viv --help`` stays fast.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 from pathlib import Path
+from typing import Callable
 
 from viv_rom.config import CaseConfig, parse_case
 
@@ -31,7 +33,20 @@ def add_case_arguments(parser: argparse.ArgumentParser) -> None:
                              "(default: %(default)s)")
     parser.add_argument("-o", "--output-dir", type=Path, default=None,
                         help="figure output folder (default: "
-                             "results/<case>_u<speed>/<method>)")
+                             "results/<case>/u<speed>/<method>); with a "
+                             "wind-speed range, one u<speed> subfolder "
+                             "per speed is created inside it")
+    sweep = parser.add_argument_group(
+        "wind-speed range",
+        "Run the analysis for every wind speed start, start+step, ... "
+        "<= stop instead of the single --wind-speed. Speeds without a "
+        "data file are skipped.")
+    sweep.add_argument("--u-start", type=int, default=None, metavar="U",
+                       help="first wind speed [m/s]")
+    sweep.add_argument("--u-stop", type=int, default=None, metavar="U",
+                       help="last wind speed [m/s], inclusive")
+    sweep.add_argument("--u-step", type=int, default=None, metavar="DU",
+                       help="wind-speed increment [m/s] (default: 1)")
 
 
 def case_kwargs(args: argparse.Namespace) -> dict:
@@ -46,3 +61,105 @@ def setup_runtime() -> None:
     import matplotlib
     matplotlib.use("Agg", force=True)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+
+# ---------------------------------------------------------------------------
+# Wind-speed range
+# ---------------------------------------------------------------------------
+def wind_speed_range(start: int, stop: int, step: int = 1) -> list[int]:
+    """Inclusive range ``start, start+step, ... <= stop`` (``step > 0``)."""
+    if step <= 0:
+        raise ValueError(f"Wind-speed step must be positive, got {step}.")
+    if stop < start:
+        raise ValueError(f"Wind-speed stop ({stop}) is below start "
+                         f"({start}).")
+    return list(range(start, stop + 1, step))
+
+
+def wind_speeds_from_args(args: argparse.Namespace) -> list[int] | None:
+    """Wind speeds requested by ``--u-start/--u-stop/--u-step``.
+
+    Returns ``None`` when no range was given (single-speed run). Start and
+    stop must come together; an omitted step defaults to 1 m/s.
+    """
+    start, stop, step = args.u_start, args.u_stop, args.u_step
+    if start is None and stop is None:
+        if step is not None:
+            raise ValueError("--u-step needs --u-start and --u-stop.")
+        return None
+    if start is None or stop is None:
+        raise ValueError("--u-start and --u-stop must be given together.")
+    return wind_speed_range(start, stop, 1 if step is None else step)
+
+
+def run_over_wind_speeds(args: argparse.Namespace,
+                         make_config: Callable[[argparse.Namespace], object],
+                         run: Callable[..., object],
+                         adapt: Callable[[object, bool], object] | None = None
+                         ) -> int:
+    """Run one method for a single wind speed or for a requested range.
+
+    Parameters
+    ----------
+    make_config : callable(args) -> config
+        Builds the method config from the parsed arguments (including
+        ``args.wind_speed``).
+    run : callable(config, output_dir=...)
+        The method pipeline's ``run``.
+    adapt : callable(config, is_first) -> config, optional
+        Per-speed adjustment, e.g. to do speed-independent work only once.
+
+    Without a range this is exactly ``run(make_config(args), output_dir=
+    args.output_dir)``. With a range every speed gets its own config; with
+    ``-o DIR`` the results go to ``DIR/u<speed>``, otherwise to the
+    method's default folder of that speed. Speeds without a data file are
+    skipped and reported; other errors are logged, the sweep continues and
+    the exit code is 1.
+
+    Returns
+    -------
+    int
+        Process exit code: 0 on success, 1 if nothing ran or a speed failed.
+    """
+    log = logging.getLogger(__name__)
+    try:
+        speeds = wind_speeds_from_args(args)
+    except ValueError as err:
+        raise SystemExit(f"error: {err}") from None
+    if speeds is None:
+        run(make_config(args), output_dir=args.output_dir)
+        return 0
+
+    done, missing, failed = [], [], []
+    for u in speeds:
+        log.info("\n%s\nWind speed %d m/s\n%s", "=" * 60, u, "=" * 60)
+        config = make_config(argparse.Namespace(**{**vars(args),
+                                                   "wind_speed": u}))
+        if adapt is not None:
+            config = adapt(config, not done)
+        out = None if args.output_dir is None else \
+            Path(args.output_dir) / f"u{u:02d}"
+        try:
+            run(config, output_dir=out)
+        except FileNotFoundError as err:
+            log.warning("Skipping u=%d m/s: %s", u, err)
+            missing.append(u)
+        except Exception:                      # keep the sweep going
+            log.exception("Analysis failed for u=%d m/s", u)
+            failed.append(u)
+        else:
+            done.append(u)
+
+    log.info("\nWind-speed range %s: completed %s", speeds, done or "none")
+    if missing:
+        log.info("  no data file for %s", missing)
+    if failed:
+        log.info("  failed for %s", failed)
+    return 0 if done and not failed else 1
+
+
+def without_frequency_sweep(config, is_first: bool):
+    """Adapter: keep a speed-independent sweep only for the first speed."""
+    if is_first or not getattr(config, "do_frequency_sweep", False):
+        return config
+    return dataclasses.replace(config, do_frequency_sweep=False)

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import argparse
 
-from viv_rom.cli_common import add_case_arguments, case_kwargs, setup_runtime
+from viv_rom.cli_common import (add_case_arguments, case_kwargs,
+                                run_over_wind_speeds, setup_runtime)
 from viv_rom.pod.config import PODConfig
 from viv_rom.pod.normalization import available_normalizers
 
@@ -56,9 +57,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="skip the physical power cross-check")
 
 
-def run_from_args(args: argparse.Namespace) -> int:
-    setup_runtime()
-    config = PODConfig(
+def build_config(args: argparse.Namespace) -> PODConfig:
+    return PODConfig(
         **case_kwargs(args), field=args.field,
         n_modes_show=args.n_modes_show, station_y=args.station_y,
         do_power_check=not args.no_power_check,
@@ -69,9 +69,11 @@ def run_from_args(args: argparse.Namespace) -> int:
         energy_error_reference=args.energy_reference,
         phase_modes=args.phase_modes, phase_harmonics=args.phase_harmonics)
 
+
+def run_from_args(args: argparse.Namespace) -> int:
+    setup_runtime()
     from viv_rom.pod.pipeline import run  # heavy import, deferred
-    run(config, output_dir=args.output_dir)
-    return 0
+    return run_over_wind_speeds(args, build_config, run)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -223,14 +223,15 @@ def pod_summary_text(result: PODAnalysisResult, config: PODConfig) -> str:
     return "\n".join(lines)
 
 
-def log_summary(result: PODAnalysisResult, config: PODConfig) -> None:
+def log_summary(result: PODAnalysisResult, config: PODConfig,
+                output_dir: Path | None = None) -> None:
     summary = pod_summary_text(result, config)
 
     # Console/log output
     logger.info("\n%s", summary)
 
     # Save to file
-    output_dir = config.default_output_dir
+    output_dir = Path(output_dir or config.default_output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     (output_dir / "pod_summary.txt").write_text(summary, encoding="utf-8")
@@ -300,7 +301,7 @@ def run(config: PODConfig, output_dir: Path | None = None
     """Analyse a case, log a summary and write the figures."""
     output_dir = Path(output_dir or config.default_output_dir)
     result = analyse(config)
-    log_summary(result, config)
+    log_summary(result, config, output_dir)
     write_figures(result, config, output_dir)
     logger.info("\nFigures written to: %s", output_dir.resolve())
     return result

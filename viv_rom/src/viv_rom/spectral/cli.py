@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import argparse
 
-from viv_rom.cli_common import add_case_arguments, case_kwargs, setup_runtime
+from viv_rom.cli_common import (add_case_arguments, case_kwargs,
+                                run_over_wind_speeds, setup_runtime,
+                                without_frequency_sweep)
 from viv_rom.domain.frames import available_frames
 from viv_rom.spectral.config import SpectralConfig, available_fields
 
@@ -68,9 +70,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="skip the cycle-by-cycle energy injection")
 
 
-def run_from_args(args: argparse.Namespace) -> int:
-    setup_runtime()
-    config = SpectralConfig(
+def build_config(args: argparse.Namespace) -> SpectralConfig:
+    return SpectralConfig(
         **case_kwargs(args), frame=args.frame, field=args.field,
         stations=tuple(args.stations), n_harmonics=args.n_harmonics,
         nperseg=args.nperseg, spectrogram_nperseg=args.spectrogram_nperseg,
@@ -86,9 +87,14 @@ def run_from_args(args: argparse.Namespace) -> int:
         response_harmonics=args.response_harmonics,
         do_cycle_energy=not args.no_cycle_energy)
 
+
+def run_from_args(args: argparse.Namespace) -> int:
+    setup_runtime()
     from viv_rom.spectral.pipeline import run  # heavy import, deferred
-    run(config, output_dir=args.output_dir)
-    return 0
+    # The --u-sweep frequency sweep does not depend on --wind-speed, so in a
+    # wind-speed range it is done once (for the first speed) only.
+    return run_over_wind_speeds(args, build_config, run,
+                                adapt=without_frequency_sweep)
 
 
 def main(argv: list[str] | None = None) -> int:

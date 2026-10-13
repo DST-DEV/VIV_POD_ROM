@@ -23,7 +23,23 @@ Methods (one subpackage each):
 
 Shortcuts `viv-pod` and `viv-spectral`, and `python -m viv_rom.pod` /
 `python -m viv_rom.spectral`, run a single method. Figures go to
-`results/<case>_u<speed>/<method>` unless `-o` is given.
+`results/<case>/u<speed>/<method>` unless `-o` is given.
+
+### Wind-speed range
+
+Both methods accept `--u-start`, `--u-stop` and `--u-step` (default 1) to
+run the whole analysis for every speed `start, start+step, ... <= stop`
+(stop inclusive) instead of the single `-u`:
+
+    viv pod      --case a01_p85_i50 --u-start 6 --u-stop 22 --u-step 2
+    viv spectral --case a01_p85_i50 --u-start 6 --u-stop 22 --u-step 2 -o results/sweep
+
+Each speed writes to its own folder (`results/<case>/u<speed>/<method>`,
+or `<-o>/u<speed>` when `-o` is given). Speeds without a `.1HY` file are
+skipped and listed at the end; a failing speed is logged and the range
+continues (exit code 1). The spectral lock-in frequency sweep (`--u-sweep`)
+does not depend on `-u`, so inside a range it is done once, for the first
+speed that runs.
 
 ## Python
 
