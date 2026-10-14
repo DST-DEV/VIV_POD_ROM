@@ -8,6 +8,7 @@ Methods (one subpackage each):
 | Subpackage | What it does |
 |---|---|
 | `viv_rom.pod` | Proper orthogonal decomposition of the sectional-force distribution, plus a physical power cross-check |
+| `viv_rom.spod` | Spectral POD (Welch/Towne): SPOD modes per frequency, harmonic content, phase-locking to the forced motion, energy injection per mode |
 | `viv_rom.spectral` | Welch PSD per station, frequency-vs-span PSD / amplitude / phase maps, spectrogram, wind-speed sweep (lock-in diagram) |
 
 ## Install
@@ -19,15 +20,16 @@ Methods (one subpackage each):
 
     viv pod      --data-dir data/archive_1D --case a01_p85_i50 -u 10 --field combined
     viv spectral --data-dir data/archive_1D --case a01_p85_i50 -u 10 --field both
+    viv spod     --data-dir data/archive_1D --case a01_p85_i50 -u 10 --field combined
     viv pod --help               # all options of a method
 
-Shortcuts `viv-pod` and `viv-spectral`, and `python -m viv_rom.pod` /
-`python -m viv_rom.spectral`, run a single method. Figures go to
+Shortcuts `viv-pod`, `viv-spectral` and `viv-spod`, and `python -m viv_rom.pod` /
+`python -m viv_rom.spectral` / `python -m viv_rom.spod`, run a single method. Figures go to
 `results/<case>/u<speed>/<method>` unless `-o` is given.
 
 ### Wind-speed range
 
-Both methods accept `--u-start`, `--u-stop` and `--u-step` (default 1) to
+All methods accept `--u-start`, `--u-stop` and `--u-step` (default 1) to
 run the whole analysis for every speed `start, start+step, ... <= stop`
 (stop inclusive) instead of the single `-u`:
 
@@ -140,6 +142,47 @@ Results: `result.forcing_response` (`.amplitude`, `.phase`, `.explained`) and
 `result.cycle_energy` (`.energy`, `.total`, `.station_stats`, `.total_stats`).
 `motion` and `motion_amplitude` are now part of the shared `CaseConfig`.
 
+## Spectral POD (SPOD)
+
+`viv_rom.spod` implements the Welch-type SPOD of Towne, Schmidt & Colonius
+(2018). The de-meaned (and optionally normalised, as for the POD) field is
+cut into overlapping, windowed blocks; at every frequency the eigen-problem
+of the cross-spectral density gives the SPOD modes -- complex spanwise shapes
+that oscillate at a single frequency -- and their power
+`lambda_k(f)` (one-sided weighted PSD, so `sum(lambda) df` is the
+mean-square of the field). A coherent, locked response collapses onto *one*
+SPOD mode, whereas the real POD of the same data needs several.
+
+    viv spod --case a01_p85_i50 -u 10 --field combined --segment-periods 2
+    viv spod ... --normalization dynamic_pressure --weighting span
+
+* **Blocks:** `--segment-periods` (default 2) sets the block length in
+  forcing periods, hence the resolution `df = f_forcing / segment_periods`
+  and, with a whole number of samples per period, puts the forcing
+  frequency and harmonics exactly on bins. Shorter blocks give more blocks
+  (= more modes, steadier estimates), longer blocks resolve close lines
+  (e.g. a free shedding frequency next to the forcing). `--n-fft`,
+  `--overlap` and `--window` give full control. At least two blocks are
+  required.
+* **Weighting:** `--weighting span` (default, integral over the span) or
+  `identity`; add your own with `register_inner_product`.
+* **Phase locking** (`spod/locking.py`): the motion is deterministic, so
+  each mode's coefficients are regressed on the blocks of `sin(n w t)`. This
+  fixes the arbitrary eigenvector phase and gives the locked mode shape
+  `H_k(y)`: force `|H_k| sin(n w t + arg H_k)` with the phase convention of the
+  POD/spectral modules (+90 deg = in phase with the velocity). It also
+  yields the *locked fraction* of the power at each harmonic and the
+  coherence of each mode with the motion -- a lock-in strength measure that
+  can be compared between wind speeds / pitch angles. Unrelated noise
+  gives a floor of about `1/n_blocks`, which the report states.
+* **Energy injection** (`spod/injection.py`): the mean power of the locked
+  fundamental is `p = 1/2 v_amp Im(H)`; it splits exactly over the SPOD
+  modes, with the same "modes needed for 99 %" metrics as the POD
+  (`--energy-tolerance`, `--energy-metrics`, `--energy-reference`).
+* **Output** (`-o` folder): `spod_summary.txt` (also printed) and figures
+  `01_eigenvalue_spectrum`, `02_harmonic_modal_content`,
+  `03_leading_mode_map`, `04_locked_modes`, `05_injection`.
+
 ## Conventions
 
 * Sectional fields (`Fx`, `Fz`, POD snapshot matrices) have shape
@@ -160,8 +203,10 @@ Results: `result.forcing_response` (`.amplitude`, `.phase`, `.explained`) and
                 power plotting pipeline cli
       spectral/ config core forcing_response cycle_energy plotting sweep pipeline
                 cli
+      spod/     config weights blocks core locking injection analysis plotting
+                pipeline cli
 
-## Adding a method (e.g. SPOD)
+## Adding a method (worked example: `spod`)
 
 1. Create `viv_rom/spod/` with `config.py` (`SPODConfig(CaseConfig)`),
    numerics, `pipeline.py` (`analyse`, `write_figures`, `run`) and `cli.py`.

@@ -10,12 +10,16 @@ import argparse
 
 from viv_rom.pod import cli as pod_cli
 from viv_rom.spectral import cli as spectral_cli
+from viv_rom.spod import cli as spod_cli
 
 METHODS = {
     "pod": (pod_cli,
             "proper orthogonal decomposition of the sectional forces"),
     "spectral": (spectral_cli,
                  "PSD / phase / spectrogram / lock-in analysis"),
+    "spod": (spod_cli,
+             "spectral proper orthogonal decomposition with lock-in "
+             "diagnostics"),
 }
 
 

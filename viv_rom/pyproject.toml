@@ -28,6 +28,7 @@ dev = ["pytest"]
 viv = "viv_rom.cli:main"
 viv-pod = "viv_rom.pod.cli:main"
 viv-spectral = "viv_rom.spectral.cli:main"
+viv-spod = "viv_rom.spod.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
