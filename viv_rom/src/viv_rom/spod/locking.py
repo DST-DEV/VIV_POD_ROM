@@ -151,12 +151,19 @@ def phase_locked_response(spod: SPODResult, blocks: FourierBlocks,
         a = spod.coefficients_at(blocks, b)                  # (n_modes, n_b)
         r = reference.q[b, i, :]                             # (n_b,)
         r_power = np.sum(np.abs(r) ** 2)
-        cross = a @ r.conj()                                 # (n_modes,)
+        cross = a @ r.conj()  # Cross correlation matrix (n_modes,)
+
+        # Least squares coefficient fit of the spod coefficients on the
+        # reference
         s = cross / r_power if r_power > 0 else np.zeros_like(cross)
+
+        # Calculate coherence
         a_power = np.sum(np.abs(a) ** 2, axis=1)
         denom = a_power * r_power
         coh = np.divide(np.abs(cross) ** 2, denom,
                         out=np.zeros(len(cross)), where=denom > 0)
+
+        # Save results
         coeff.append(s)
         energy_locked.append(np.abs(s) ** 2 * r_power / n_b)
         coherence.append(coh)
