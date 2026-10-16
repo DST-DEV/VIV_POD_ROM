@@ -8,8 +8,7 @@ from viv_rom.config import CaseConfig
 from viv_rom.pod.core import FIELD_OPTIONS
 from viv_rom.pod.energy_injection import (resolve_aggregators,
                                           resolve_reference)
-from viv_rom.pod.normalization import (RHO_AIR, Normalizer,
-                                       available_normalizers, make_normalizer)
+from viv_rom.pod.normalization import (RHO_AIR, Normalizer, make_normalizer)
 
 
 @dataclass
@@ -77,9 +76,11 @@ class PODConfig(CaseConfig):
             self.normalization = (self.normalization,)
         self.normalization = tuple(self.normalization)
         self.normalizers()  # fail early on unknown names
+
         self.energy_error_metrics = tuple(self.energy_error_metrics)
         resolve_aggregators(self.energy_error_metrics)
         resolve_reference(self.energy_error_reference)
+
         if self.energy_tolerance < 0:
             raise ValueError("energy_tolerance must be non-negative.")
         if self.phase_modes < 0 or self.phase_harmonics < 1:

@@ -146,7 +146,7 @@ def build_field_matrix(Fx: np.ndarray, Fz: np.ndarray, mode: str
 def compute_pod(fluctuation: np.ndarray) -> PODResult:
     """POD of a fluctuation field via the direct (economy SVD) method.
 
-    No mean removal or scaling is done here -- prepare the input with
+    No mean removal or scaling is done here. Prepare the input with
     :class:`viv_rom.pod.preprocessing.Preprocessor`.
 
     Parameters

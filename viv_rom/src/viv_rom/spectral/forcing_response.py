@@ -50,7 +50,7 @@ class ForcingResponse:
     phase : dict of {str: ndarray, shape (n_stations, H)}
         ``phi_n`` [rad] in ``(-pi, pi]`` (``nan`` where negligible).
     explained : dict of {str: ndarray, shape (n_stations,)}
-        Fraction of the force variance captured by the harmonic fit; low
+        Fraction of the force variance captured by the harmonic fit. Low
         values flag content not periodic at the forcing frequency.
     """
     y: np.ndarray

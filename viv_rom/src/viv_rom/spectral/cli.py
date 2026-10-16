@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 
 from viv_rom.cli_common import (add_case_arguments, case_kwargs,
-                                run_over_wind_speeds, setup_runtime,
-                                without_frequency_sweep)
+                                run_over_wind_speeds, setup_runtime)
 from viv_rom.domain.frames import available_frames
 from viv_rom.spectral.config import SpectralConfig, available_fields
 
@@ -95,6 +95,13 @@ def run_from_args(args: argparse.Namespace) -> int:
     # wind-speed range it is done once (for the first speed) only.
     return run_over_wind_speeds(args, build_config, run,
                                 adapt=without_frequency_sweep)
+
+
+def without_frequency_sweep(config, is_first: bool):
+    """Adapter: keep a speed-independent sweep only for the first speed."""
+    if is_first or not getattr(config, "do_frequency_sweep", False):
+        return config
+    return dataclasses.replace(config, do_frequency_sweep=False)
 
 
 def main(argv: list[str] | None = None) -> int:

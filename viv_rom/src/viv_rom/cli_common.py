@@ -5,7 +5,6 @@ Kept free of matplotlib and pipeline imports so ``viv --help`` stays fast.
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import logging
 from pathlib import Path
 from typing import Callable
@@ -63,9 +62,9 @@ def setup_runtime() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
-# ---------------------------------------------------------------------------
+# =============================================================================
 # Wind-speed range
-# ---------------------------------------------------------------------------
+# =============================================================================
 def wind_speed_range(start: int, stop: int, step: int = 1) -> list[int]:
     """Inclusive range ``start, start+step, ... <= stop`` (``step > 0``)."""
     if step <= 0:
@@ -156,10 +155,3 @@ def run_over_wind_speeds(args: argparse.Namespace,
     if failed:
         log.info("  failed for %s", failed)
     return 0 if done and not failed else 1
-
-
-def without_frequency_sweep(config, is_first: bool):
-    """Adapter: keep a speed-independent sweep only for the first speed."""
-    if is_first or not getattr(config, "do_frequency_sweep", False):
-        return config
-    return dataclasses.replace(config, do_frequency_sweep=False)

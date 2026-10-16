@@ -72,7 +72,8 @@ def per_cycle_integral(values: np.ndarray, t: np.ndarray, period: float,
     edges = t0 + period * np.arange(n_cycles + 1)
 
     # Cumulative trapezoid integral C(t_i) and exact value at the edges:
-    # C(b) = C(t_i) + (b - t_i) * (p_i + p(b)) / 2, with p linear on [t_i, t_i+1].
+    # C(b) = C(t_i) + (b - t_i) * (p_i + p(b)) / 2
+    # with p linear on [t_i, t_i+1].
     dt = np.diff(t)
     cum = np.concatenate(
         [np.zeros(values.shape[:-1] + (1,)),
@@ -114,7 +115,7 @@ def cycle_statistics(x: np.ndarray) -> CycleStatistics:
     """Statistics over axis 0 (cycles) of ``x``, shape ``(n_cycles, ...)``.
 
     Quantities that need more cycles than available (``std``: 2,
-    ``slope``: 2, ``std_detrended``: 3) are ``nan``; ratios by a mean that is
+    ``slope``: 2, ``std_detrended``: 3) are ``nan``. Ratios by a mean that is
     negligible against the largest mean are ``nan`` too.
     """
     x = np.asarray(x, dtype=float)

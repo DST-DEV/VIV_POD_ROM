@@ -118,10 +118,10 @@ class HyReader:
         path : PurePath
             Path to the .1HY file
         n_skip : int, optional
-            Number of rows to skip at the beginning of the file, by default 0
+            Number of rows to skip at the beginning of the file. Default is 0.
         n_last : None | int, optional
             Number or rows to keep after n_skip. If None, keep all rows.
-            Default is None
+            Default is None.
 
         Returns
         -------

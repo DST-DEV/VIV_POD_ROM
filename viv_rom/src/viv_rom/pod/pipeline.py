@@ -5,7 +5,6 @@ Typical interactive use::
     from viv_rom import PODConfig, analyse
     result = analyse(PODConfig.from_case("a01_p85_i50", wind_speed=12,
                                          data_dir="data/archive_1D"))
-    result.pod.energy_frac[:4]
 
 The three steps are also available separately: :func:`analyse` (no plotting,
 no file output), :func:`write_figures`, and :func:`run` (both, plus a
@@ -48,8 +47,8 @@ class PODAnalysisResult:
     field_info: FieldInfo
     preprocessing: Preprocessing  # normalisation + mean applied before POD
     pod: PODResult  # decomposition of the preprocessed (fluctuation) field
-    dominant_freqs: np.ndarray      # per reported mode [Hz]
-    n99: int                        # modes needed for 99 % of the energy
+    dominant_freqs: np.ndarray  # per reported mode [Hz]
+    n99: int  # modes needed for 99 % of the energy
     dt: float
     n_periods: float
     station_index: int
@@ -81,6 +80,7 @@ class PODAnalysisResult:
 
 def analyse(config: PODConfig) -> PODAnalysisResult:
     """Load a case and run the POD (and optional power check)."""
+    # Load force field data
     logger.info("Loading case %s, u = %s m/s from %s ...", config.case,
                 config.wind_speed, config.data_dir)
     force_file = load_case(config)
@@ -94,8 +94,10 @@ def analyse(config: PODConfig) -> PODAnalysisResult:
     logger.info("  %d spanwise stations, y = %.1f to %.1f m",
                 len(y), y[0], y[-1])
 
+    # Retrieve selected force components and build field matrix
     field, field_info = build_field_matrix(Fx=Fx, Fz=Fz, mode=config.field)
 
+    # Preprocess the data: normalization (optional) and mean removal
     omega = 2 * np.pi * config.f_forcing
     context = NormalizationContext(
         y=y, wind_speed=force_file.wind_speed, motion=config.motion,
@@ -107,21 +109,25 @@ def analyse(config: PODConfig) -> PODAnalysisResult:
     logger.info("  normalization: %s",
                 ", ".join(preprocessing.normalization_names) or "none")
 
+    # Run proper orthogonal decomposition and reconstruct physical field
     pod = compute_pod(fluctuation)
     reconstruct = PhysicalReconstructor(pod, preprocessing)
 
+    # Report energy and dominant frequency of each mode
     n_report = min(config.n_modes_show, pod.n_modes)
     dominant_freqs = np.array([
         dominant_frequency(signal=pod.time_coeff[k, :], dt=dt)[0]
         for k in range(n_report)])
     n99 = pod.modes_for_energy(0.99)
 
+    # Select station for plotting later
     candidates = np.where(y >= config.station_y)[0]
     if len(candidates) == 0:
         raise ValueError(f"station_y = {config.station_y} m is beyond the "
                          f"last section (y = {y[-1]:.1f} m).")
     station_index = int(candidates[0])
 
+    # Run power analysis incl. reconstruction from the first couple of modes
     power = None
     if config.do_power_check:
         work_file = force_file.source_file.with_suffix(".1work")
@@ -130,8 +136,9 @@ def analyse(config: PODConfig) -> PODAnalysisResult:
             field_info=field_info, motion=config.motion,
             amplitude=config.effective_motion_amplitude,
             omega=omega, n_modes=n99,
-            work_file=work_file)
+            work_file=work_file, n_skip=config.n_skip, n_last=config.n_last)
 
+    # Analyse energy injection contribution of each mode
     energy = None
     if config.do_energy_analysis:
         amp = config.effective_motion_amplitude
@@ -143,6 +150,8 @@ def analyse(config: PODConfig) -> PODAnalysisResult:
             aggregators=config.energy_error_metrics,
             reference=config.energy_error_reference)
 
+    # Analyse amplitude & phase of each mode at the forcing frequency
+    # (+ harmonics)
     phases = None
     if config.phase_modes > 0:
         # orient the modes by their work alignment with the motion, so that

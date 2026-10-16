@@ -1,4 +1,5 @@
-"""Preparing a snapshot matrix for POD: optional normalisation, then mean removal.
+"""Preparing a snapshot matrix for POD: optional normalisation, then mean
+removal.
 
     physical field D  --scaling-->  S D  --subtract mean-->  D' = S D - m
 

@@ -8,11 +8,10 @@ from __future__ import annotations
 from typing import Mapping
 
 import numpy as np
-# from scipy.signal import ShortTimeFFT, welch
 from scipy.signal import ShortTimeFFT, find_peaks, welch
 from scipy.signal.windows import hann
 
-# Labels of the blade-frame components; other frames bring their own
+# Labels of the blade-frame components. Other frames bring their own
 # (``ForceFrame.labels``) and the plotting functions accept them.
 COMPONENT_LABELS = {"fx": "Fx (edgewise)", "fz": "Fz (flapwise)"}
 

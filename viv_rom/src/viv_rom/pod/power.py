@@ -66,7 +66,9 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray,
                             motion: ForcedMotion, amplitude: float,
                             omega: float, n_modes: int = 4,
                             r_values: Iterable[int] = (1, 2, 4),
-                            work_file: Path | None = None) -> PowerCheck:
+                            work_file: Path | None = None,
+                            n_skip: int = 0, n_last: None | int = None,
+                            ) -> PowerCheck:
     """Correlate aerodynamic power with the leading POD temporal coefficients.
 
     The instantaneous power transferred from the fluid to the prescribed
@@ -106,6 +108,11 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray,
     work_file : Path or None, optional
         Solver ``*.1work`` file for validating the mean power. Skipped if
         ``None`` or non-existent.
+    n_skip : int, optional
+        Number of rows to skip at the beginning of the work file. Default is 0.
+    n_last : None | int, optional
+        Number or rows to keep after n_skip when reading the work file.
+        If None, keep all rows. Default is None.
     """
     vx = motion.velocity(component="x", y=y, t=t, amplitude=amplitude,
                          omega=omega)
@@ -118,9 +125,17 @@ def power_correlation_check(y: np.ndarray, t: np.ndarray,
     mean_power_work = None
     if work_file is not None and Path(work_file).exists():
         wk = np.loadtxt(work_file, comments="#")
+        if n_skip:
+            wk = wk[n_skip:]
+        if n_last:
+            wk = wk[-n_last:]
+
         dt = t[1] - t[0]
-        n = min(len(wk), len(P_total))
-        mean_power_work = float(((wk[-n:, 2] + wk[-n:, 4]) / dt).mean())
+        if not len(wk) == len(P_total):
+            logger.info("Warning: Selected settings for *.1work file result "
+                        "in dimension mismatch compared to force time series")
+
+        mean_power_work = float(((wk[:, 2] + wk[:, 4]) / dt).mean())
     else:
         logger.info("(*.1work file not found/skipped. No cross-check "
                     "against solver output)")

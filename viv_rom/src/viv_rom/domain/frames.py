@@ -72,7 +72,6 @@ def make_frame(name: str, motion: ForcedMotion) -> ForceFrame:
 # ---------------------------------------------------------------------------
 # Implementation of ForceFrames
 # ---------------------------------------------------------------------------
-# @register_frame("blade")
 class BladeFrame:
     """The blade-root frame as delivered by the CFD (no rotation)."""
     name = "blade"
@@ -82,7 +81,6 @@ class BladeFrame:
         return {"fx": Fx, "fz": Fz}
 
 
-# @register_frame("motion")
 class MotionAlignedFrame:
     """Per-station frame with one axis along the local direction of motion.
 
@@ -103,6 +101,7 @@ class MotionAlignedFrame:
         cx, cz = cx[:, None], cz[:, None]
         return {"fpar": Fx * cx + Fz * cz,
                 "fperp": -Fx * cz + Fz * cx}
+
 
 register_frame("blade")(lambda motion: BladeFrame())
 register_frame("motion")(lambda motion: MotionAlignedFrame(motion))
