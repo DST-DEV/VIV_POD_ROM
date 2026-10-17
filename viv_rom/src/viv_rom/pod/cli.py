@@ -53,6 +53,9 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         default=default_config.phase_harmonics,
                         help="harmonics of the forcing frequency for the "
                              "phases")
+    parser.add_argument("--unwrap-phase", action="store_true",
+                        help="whether phases should be unwrapped from the "
+                        "(-pi, pi] window to show continous increase/decrease")
     parser.add_argument("--no-power-check", action="store_true",
                         help="skip the physical power cross-check")
 
@@ -67,7 +70,8 @@ def build_config(args: argparse.Namespace) -> PODConfig:
         energy_tolerance=args.energy_tolerance,
         energy_error_metrics=tuple(args.energy_metrics),
         energy_error_reference=args.energy_reference,
-        phase_modes=args.phase_modes, phase_harmonics=args.phase_harmonics)
+        phase_modes=args.phase_modes, phase_harmonics=args.phase_harmonics,
+        unwrap_phase=args.unwrap_phase)
 
 
 def run_from_args(args: argparse.Namespace) -> int:

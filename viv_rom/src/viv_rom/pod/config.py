@@ -53,6 +53,9 @@ class PODConfig(CaseConfig):
         reported (0 disables the phase analysis).
     phase_harmonics : int
         Harmonics ``1..n`` of the forcing frequency used for the phases.
+    unwrap_phase : bool
+        If False (default), phases are wrapped to ``(-pi, pi]``.
+        If True, return the continuous (unwrapped) phase.
     """
     field: str = "combined"
     n_modes_show: int = 4
@@ -66,6 +69,7 @@ class PODConfig(CaseConfig):
     energy_error_reference: str | Callable = "peak"
     phase_modes: int = 4
     phase_harmonics: int = 3
+    unwrap_phase: bool = False
 
     def __post_init__(self):
         super().__post_init__()

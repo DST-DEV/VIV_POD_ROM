@@ -86,7 +86,8 @@ class ForcingResponse:
 def forcing_frequency_response(components: Mapping[str, np.ndarray],
                                y: np.ndarray, t: np.ndarray,
                                f_forcing: float, n_harmonics: int = 3,
-                               amplitude_floor: float = 1e-3
+                               amplitude_floor: float = 1e-3,
+                               unwrap_phase: bool = False
                                ) -> ForcingResponse:
     """Amplitude and phase of each component at ``n * f_forcing``.
 
@@ -103,10 +104,15 @@ def forcing_frequency_response(components: Mapping[str, np.ndarray],
     amplitude_floor : float
         Phase is ``nan`` where ``A_n`` is below this fraction of its maximum
         over the span.
+    unwrap_phase : bool, default=False
+        If False (default), phases are wrapped to ``(-pi, pi]``.
+        If True, return the continuous (unwrapped) phase.
     """
     amplitude, phase, explained = {}, {}, {}
     for key, data in components.items():
-        amp, ph, r2 = fit_harmonics(data, t, f_forcing, n_harmonics)
+        amp, ph, r2 = fit_harmonics(signals=data, t=t, f=f_forcing,
+                                    n_harmonics=n_harmonics,
+                                    unwrap_phase=unwrap_phase)
         scale = np.abs(data).max(axis=-1, keepdims=True)   # per station
         negligible = ((amp < amplitude_floor * amp.max(axis=0,
                                                        keepdims=True))

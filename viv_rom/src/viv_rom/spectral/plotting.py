@@ -216,16 +216,33 @@ def plot_forcing_response(response: ForcingResponse, harmonic: int = 1,
     ax1.legend(fontsize=8)
     ax1.grid(alpha=.8, zorder=0)
 
-    for level in (-180, -90, 0, 90, 180):
-        ax2.axhline(level, color="gray", lw=.8,
-                    ls="-" if level == 0 else ":")
-    ax2.set_yticks([-180, -90, 0, 90, 180])
-    ax2.set_ylim(-190, 190)
+    y_max = np.nanmax([np.degrees(phase[:, h])
+                       for phase in response.phase.values()])
+    y_min = np.nanmin([np.degrees(phase[:, h])
+                       for phase in response.phase.values()])
+
+    if y_max - y_min <= 360:
+        for level in (-180, -90, 0, 90, 180):
+            ax2.axhline(level, color="gray", lw=.8,
+                        ls="-" if level == 0 else ":")
+        ax2.set_yticks([-180, -90, 0, 90, 180])
+        ax2.set_ylim(-190, 190)
+    else:
+        y_min_360 = np.ceil(abs(y_min) / 360) * 360 * int(y_min/abs(y_min))
+        y_max_360 = np.ceil(abs(y_max) / 360) * 360 * int(y_max/abs(y_max))
+
+        y_min_90 = np.ceil(abs(y_min) / 90) * 90 * int(y_min/abs(y_min))
+        y_max_90 = np.ceil(abs(y_max) / 90) * 90 * int(y_max/abs(y_max))
+
+        ax2.set_yticks(np.arange(y_min_360, y_max_360, 360))
+        ax2.set_yticks(np.arange(y_min_90, y_max_90, 90), minor=True)
+        ax2.set_ylim(y_min_90, y_max_90)
+
     ax2.set_xlabel("Spanwise station y [m]")
     ax2.set_ylabel("Phase lead vs. displacement [deg]")
     ax2.set_title("Phase (+90 deg = in phase with velocity)")
     ax2.legend(fontsize=8)
-    ax2.grid(alpha=.8, zorder=0)
+    ax2.grid(alpha=.8, zorder=0, which="both")
     fig.tight_layout()
     return fig
 

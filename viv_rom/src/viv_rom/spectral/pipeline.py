@@ -123,7 +123,9 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
     forcing_response = None
     if config.do_forcing_response:
         forcing_response = forcing_frequency_response(
-            components, y, t, config.f_forcing, config.response_harmonics)
+            components=components, y=y, t=t, f_forcing=config.f_forcing,
+            n_harmonics=config.response_harmonics,
+            unwrap_phase=config.unwrap_phase)
 
     cycle_energy = None
     if config.do_cycle_energy:

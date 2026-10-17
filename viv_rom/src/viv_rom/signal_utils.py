@@ -34,7 +34,7 @@ def dominant_frequency(signal: np.ndarray, dt: float
 
 
 def fit_harmonics(signals: np.ndarray, t: np.ndarray, f: float,
-                  n_harmonics: int
+                  n_harmonics: int, unwrap_phase: bool = False
                   ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Least-squares fit of ``f`` and its harmonics to each signal.
 
@@ -55,6 +55,9 @@ def fit_harmonics(signals: np.ndarray, t: np.ndarray, f: float,
         Fundamental frequency [Hz].
     n_harmonics : int
         Harmonics ``1..n_harmonics``.
+    unwrap_phase : bool, default=False
+        If False (default), phases are wrapped to ``(-pi, pi]``.
+        If True, return the continuous (unwrapped) phase.
 
     Returns
     -------
@@ -96,8 +99,11 @@ def fit_harmonics(signals: np.ndarray, t: np.ndarray, f: float,
 
     alpha = coef[1::2].T                               # cos coefficients
     beta = coef[2::2].T                                # sin coefficients
-    amplitude = np.hypot(alpha, beta)
-    phase = np.arctan2(alpha, beta)                    # A sin(n w t + phi)
+    amplitude = np.hypot(alpha, beta)  # (n_signals, n_harmonics)
+    phase = np.arctan2(alpha, beta)  # A sin(n w t + phi)
+
+    if unwrap_phase:
+        phase = np.unwrap(phase, discont=1.5*np.pi, axis=0)
 
     resid = np.sum((a - X @ coef) ** 2, axis=0)
     total = np.sum((a - a.mean(axis=0)) ** 2, axis=0)

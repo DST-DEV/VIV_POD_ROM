@@ -134,7 +134,8 @@ def harmonic_phase_analysis(time_coeff: np.ndarray, t: np.ndarray,
                             f_forcing: float, n_modes: int = 4,
                             n_harmonics: int = 3,
                             signs: np.ndarray | None = None,
-                            amplitude_floor: float = 1e-3
+                            amplitude_floor: float = 1e-3,
+                            unwrap_phase: float = False
                             ) -> HarmonicPhases:
     """Phase/amplitude of the leading coefficients at the forcing harmonics.
 
@@ -163,7 +164,8 @@ def harmonic_phase_analysis(time_coeff: np.ndarray, t: np.ndarray,
     sign = (np.ones(K) if signs is None else np.asarray(signs, float)[:K])
 
     amplitude, phase, explained = fit_harmonics(
-        time_coeff[:K] * sign[:, None], t, f_forcing, n_harmonics)
+        signals=time_coeff[:K] * sign[:, None], t=t, f=f_forcing,
+        n_harmonics=n_harmonics, unwrap_phase=unwrap_phase)
     negligible = amplitude < amplitude_floor * amplitude.max(axis=1,
                                                              keepdims=True)
     phase = np.where(negligible, np.nan, phase)

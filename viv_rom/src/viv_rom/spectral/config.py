@@ -55,6 +55,9 @@ class SpectralConfig(CaseConfig):
         Mask phase where the magnitude is more than this many dB below the
         panel's peak (phase is meaningless without spectral content).
         ``None`` disables masking.
+    unwrap_phase : bool
+        If False (default), phases are wrapped to ``(-pi, pi]``.
+        If True, return the continuous (unwrapped) phase.
     u_sweep_list : tuple of int
         Wind speeds [m/s] included in the sweep (missing files are skipped).
     sweep_field : str or None
@@ -80,6 +83,7 @@ class SpectralConfig(CaseConfig):
     do_spectrogram: bool = True
     do_frequency_sweep: bool = True
     phase_mask_threshold_db: float | None = -30.0
+    unwrap_phase: bool = False
     u_sweep_list: tuple[int, ...] = tuple(range(6, 23))
     sweep_field: str | None = None
     do_forcing_response: bool = True

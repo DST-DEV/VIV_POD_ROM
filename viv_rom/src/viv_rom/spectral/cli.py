@@ -49,6 +49,9 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                              "(default: %(default)s)")
     parser.add_argument("--no-phase-mask", action="store_true",
                         help="do not mask low-magnitude phase")
+    parser.add_argument("--unwrap-phase", action="store_true",
+                        help="whether phases should be unwrapped from the "
+                        "(-pi, pi] window to show continous increase/decrease")
     parser.add_argument("--no-sweep", action="store_true",
                         help="skip the wind-speed sweep")
     parser.add_argument("--u-sweep", type=int, nargs="+",
@@ -82,6 +85,7 @@ def build_config(args: argparse.Namespace) -> SpectralConfig:
         do_frequency_sweep=not args.no_sweep,
         phase_mask_threshold_db=(None if args.no_phase_mask
                                  else args.phase_mask_db),
+        unwrap_phase=args.unwrap_phase,
         u_sweep_list=tuple(args.u_sweep), sweep_field=args.sweep_field,
         do_forcing_response=not args.no_forcing_response,
         response_harmonics=args.response_harmonics,

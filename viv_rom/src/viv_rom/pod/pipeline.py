@@ -161,6 +161,7 @@ def analyse(config: PODConfig) -> PODAnalysisResult:
         phases = harmonic_phase_analysis(
             time_coeff=pod.time_coeff, t=t, f_forcing=config.f_forcing,
             n_modes=config.phase_modes, n_harmonics=config.phase_harmonics,
+            unwrap_phase=config.unwrap_phase,
             signs=canonical_signs(pod.modes, work_weights))
 
     return PODAnalysisResult(
