@@ -17,11 +17,13 @@ from viv_rom.pod.core import FieldInfo, PODResult
 # User configuration
 # =============================================================================
 DATA_DIR = Path("./data/archive_1D")  # folder containing the *.1HY files
-CASE = "a01_p85_i50"  # amplitude/pitch/inclination code, see README
+CASE = "a01_p60_i50"  # amplitude/pitch/inclination code, see README
 WIND_SPEEDS = list(range(6, 23))  # free-stream wind speed [m/s] to analyse (6-22)
 FIELD = "combined"
+normalizer = "dynamic_pressure"
 CMAP = "magma"
 OUTPUT_DIR = Path("./results") / CASE / "wind_sweep"  # Output folder
+OUTPUT_DIR.mkdir(exist_ok=True)
 
 
 # =============================================================================
@@ -30,7 +32,8 @@ OUTPUT_DIR = Path("./results") / CASE / "wind_sweep"  # Output folder
 results = {}
 for wind_speed in WIND_SPEEDS:
     config = PODConfig.from_case(case=CASE, wind_speed=wind_speed,
-                                 data_dir=DATA_DIR, field="combined", )
+                                 data_dir=DATA_DIR, field=FIELD,
+                                 normalization=normalizer)
     results[wind_speed] = analyse(config)
 
 
@@ -99,7 +102,9 @@ def plot_temporal_coefficients_overlayed(
 
 fig_time_coeffs = plot_temporal_coefficients_overlayed(
     results, f_forcing=config.f_forcing)
-fig_time_coeffs.savefig(OUTPUT_DIR / "temporal_coefficients.png", dpi=150)
+fig_time_coeffs_name = "temporal_coefficients"
+fig_time_coeffs.savefig(OUTPUT_DIR / (fig_time_coeffs_name + ".png"), dpi=150)
+fig_time_coeffs.savefig(OUTPUT_DIR / (fig_time_coeffs_name + ".svg"))
 
 
 # =============================================================================
@@ -114,7 +119,7 @@ def plot_sectional_energy_overlayed(y: np.ndarray,
 
     colors = mpl.colormaps[CMAP](np.linspace(0, 1, len(power)))
     for i, (param, pwr) in enumerate(power.items()):
-        factor = np.max(pwr.sectional_energy) if normalize else 1.0
+        factor = param**2 if normalize else 1.0
         ax.plot(y, pwr.sectional_energy/factor,
                 c=colors[i], label=param, zorder=1)
     ax.set_xlabel("Spanwise station y [m]")
@@ -131,56 +136,58 @@ power_dict = {wind_speed: results[wind_speed].power
 fig_pwr = plot_sectional_energy_overlayed(
     y=results[WIND_SPEEDS[0]].force_file.data.y,
     power=power_dict)
-fig_pwr.savefig(OUTPUT_DIR / "power_sectional.png", dpi=150)
+fig_pwr_name = "power_sectional"
+fig_pwr.savefig(OUTPUT_DIR / (fig_pwr_name + ".png"), dpi=150)
+fig_pwr.savefig(OUTPUT_DIR / (fig_pwr_name + ".svg"))
 
 
 # =============================================================================
 # Plot mode orbits
 # =============================================================================
-def plot_force_orbit(t: np.ndarray, pod_res: Mapping[int, PODAnalysisResult]
-                     ) -> Figure:
-    """Sectional-mode orbit (mode 1 vs. mode 2) at one station."""
+# def plot_force_orbit(t: np.ndarray, pod_res: Mapping[int, PODAnalysisResult]
+#                      ) -> Figure:
+#     """Sectional-mode orbit (mode 1 vs. mode 2) at one station."""
 
-    fig, ax = plt.subplots(figsize=(6, 6))
+#     fig, ax = plt.subplots(figsize=(6, 6))
 
-    cmap = mpl.colormaps[CMAP]
-    colors = cmap(np.linspace(0, 1, len(pod_res)))
-    param_vals = list(pod_res.keys())
+#     cmap = mpl.colormaps[CMAP]
+#     colors = cmap(np.linspace(0, 1, len(pod_res)))
+#     param_vals = list(pod_res.keys())
 
-    for i, (param, res) in enumerate(pod_res.items()):
-        # Reconstruct forces from first mode
-        Fx_1, Fz_1 = res.field_info.split(res.pod.reconstruct(1))
+#     for i, (param, res) in enumerate(pod_res.items()):
+#         # Reconstruct forces from first mode
+#         Fx_1, Fz_1 = res.field_info.split(res.pod.reconstruct(1))
 
-        # Reconstruct forces from second mode
-        field_2 = res.pod.mean[:, None] \
-            + res.pod.modes[:, 1][:, None] @ res.pod.time_coeff[1, :][None, :]
-        Fx_2, Fz_2 = res.field_info.split(field_2)
+#         # Reconstruct forces from second mode
+#         field_2 = res.pod.mean[:, None] \
+#             + res.pod.modes[:, 1][:, None] @ res.pod.time_coeff[1, :][None, :]
+#         Fx_2, Fz_2 = res.field_info.split(field_2)
 
-        # Choose station to plot (position of max energy injection)
-        station = np.argwhere(res.power.sectional_energy)[0][0]
+#         # Choose station to plot (position of max energy injection)
+#         station = np.argwhere(res.power.sectional_energy)[0][0]
 
-        # Calculate norm factor
-        norm_factor = max(np.max(np.abs(Fx_1[station, :])),
-                          np.max(np.abs(Fx_2[station, :])))
+#         # Calculate norm factor
+#         norm_factor = max(np.max(np.abs(Fx_1[station, :])),
+#                           np.max(np.abs(Fx_2[station, :])))
 
-        ax.plot(Fx_1[station, :]/norm_factor, Fx_2[station, :]/norm_factor,
-                lw=1.2, alpha=.8, c=colors[i])
+#         ax.plot(Fx_1[station, :]/norm_factor, Fx_2[station, :]/norm_factor,
+#                 lw=1.2, alpha=.8, c=colors[i])
 
-    colorizer = mpl.colorizer.Colorizer(
-        norm=mpl.colors.Normalize(np.min(param_vals), np.max(param_vals)),
-        cmap=CMAP)
+#     colorizer = mpl.colorizer.Colorizer(
+#         norm=mpl.colors.Normalize(np.min(param_vals), np.max(param_vals)),
+#         cmap=CMAP)
 
-    fig.colorbar(mpl.colorizer.ColorizingArtist(colorizer),
-                 ax=ax, orientation='vertical', label='Wind speed')
+#     fig.colorbar(mpl.colorizer.ColorizingArtist(colorizer),
+#                  ax=ax, orientation='vertical', label='Wind speed')
 
-    ax.set_xlabel("Mode 1")
-    ax.set_ylabel("Mode 2")
-    ax.set_title("Sectional-force orbit at energy injection maximum")
-    ax.set_aspect("equal", adjustable="box")
-    ax.grid(alpha=.8, zorder=0)
-    return fig
+#     ax.set_xlabel("Mode 1")
+#     ax.set_ylabel("Mode 2")
+#     ax.set_title("Sectional-force orbit at energy injection maximum")
+#     ax.set_aspect("equal", adjustable="box")
+#     ax.grid(alpha=.8, zorder=0)
+#     return fig
 
-fig_orbit = plot_force_orbit(
-    t=results[WIND_SPEEDS[0]].force_file.data.t,
-    pod_res=results)
-fig_orbit.savefig(OUTPUT_DIR / "force_orbit.png", dpi=150)
+# fig_orbit = plot_force_orbit(
+#     t=results[WIND_SPEEDS[0]].force_file.data.t,
+#     pod_res=results)
+# fig_orbit.savefig(OUTPUT_DIR / "force_orbit.png", dpi=150)
