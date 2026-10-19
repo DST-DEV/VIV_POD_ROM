@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Mapping
+from enum import Enum
 
 import numpy as np
 import matplotlib as mpl
@@ -10,19 +11,40 @@ from viv_rom.pod.config import PODConfig
 from viv_rom.pod.pipeline import analyse, PODAnalysisResult
 from viv_rom.signal_utils import dominant_frequency
 from viv_rom.pod.power import PowerCheck
-from viv_rom.pod.core import FieldInfo, PODResult
+from viv_rom.domain.blade import BladeGeometry
+
+
+class AbcissaType(Enum):
+    SPAN_POS = "spanwise position (root y-coordinate) [m]"
+    RED_VEL = "reduced velocity [-]"
+    CHORD = "chord length [m]"
+
+
+class CharacteristicLength(Enum):
+    CHORD = "chord length"
+    PROJECTED_CHORD = "Chord projected with pitch and twist angle"
 
 
 # =============================================================================
 # User configuration
 # =============================================================================
 DATA_DIR = Path("./data/archive_1D")  # folder containing the *.1HY files
-CASE = "a01_p60_i50"  # amplitude/pitch/inclination code, see README
+# CASE = "a01_p60_i50"  # amplitude/pitch/inclination code, see README
+PITCH = 85
+INCLINATION = 50
+AMPLITUDE = 1  # Forced motion amplitude factor
 WIND_SPEEDS = list(range(6, 23))  # free-stream wind speed [m/s] to analyse (6-22)
 FIELD = "combined"
 normalizer = "dynamic_pressure"
+R_ROOT = 2.8  # [m] Blade root diameter
+F_FORCING = .624  # [Hz] Forcing frequency (= first edgewise natural frequency)
+
+ABSCISSA_COORD = AbcissaType.SPAN_POS
+CHAR_LENGTH = CharacteristicLength.PROJECTED_CHORD
 CMAP = "magma"
-OUTPUT_DIR = Path("./results") / CASE / "wind_sweep"  # Output folder
+
+case = f"a{AMPLITUDE:02d}_p{PITCH:02d}_i{INCLINATION:02d}"
+OUTPUT_DIR = Path("./results") / case / "wind_sweep" / "pod"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
@@ -31,10 +53,49 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # =============================================================================
 results = {}
 for wind_speed in WIND_SPEEDS:
-    config = PODConfig.from_case(case=CASE, wind_speed=wind_speed,
-                                 data_dir=DATA_DIR, field=FIELD,
-                                 normalization=normalizer)
+    config = PODConfig(amplitude=AMPLITUDE, pitch=PITCH,
+                       inclination=INCLINATION, wind_speed=wind_speed,
+                       data_dir=DATA_DIR, field=FIELD,
+                       normalization=normalizer)
     results[wind_speed] = analyse(config)
+
+
+span_pos = results[wind_speed].y
+# span_pos = np.linspace(0, 96, 100)
+span_mask = np.where(span_pos >= R_ROOT)
+span_pos = span_pos[span_mask]
+
+if ABSCISSA_COORD is AbcissaType.SPAN_POS:
+    abscissa = span_pos
+elif ABSCISSA_COORD is AbcissaType.CHORD:
+    blade_file_path = Path(__file__).parent / "data" / "IEA_10MW" \
+        / "IEA-10-198-RWT.yaml"
+    blade = BladeGeometry.from_windio(blade_file_path)
+    abscissa = blade.chord_at(span_pos)
+elif ABSCISSA_COORD is AbcissaType.RED_VEL:
+    blade_file_path = Path(__file__).parent / "data" / "IEA_10MW" \
+        / "IEA-10-198-RWT.yaml"
+    blade = BladeGeometry.from_windio(blade_file_path)
+
+    chord = blade.chord_at(span_pos)
+
+    if CHAR_LENGTH == CharacteristicLength.CHORD:
+        char_length = chord
+    elif CHAR_LENGTH == CharacteristicLength.PROJECTED_CHORD:
+        # Calculate local chord angle (assumption: twist and pitch defined
+        # relative to blade tip)
+        twist = blade.twist_at(span_pos)
+        local_angle = np.deg2rad(90 - PITCH) - twist
+
+        char_length = chord * np.cos(local_angle)
+    else:
+        raise ValueError("Invalid characteristic length selection "
+                         f"{CHAR_LENGTH}")
+
+    abscissa = [wind_speed / (F_FORCING * char_length)
+                for wind_speed in WIND_SPEEDS]
+else:
+    raise ValueError(f"Invalid abscissa coordinate selection {ABSCISSA_COORD}")
 
 
 # =============================================================================
@@ -110,7 +171,7 @@ fig_time_coeffs.savefig(OUTPUT_DIR / (fig_time_coeffs_name + ".svg"))
 # =============================================================================
 # Plot sectional energy
 # =============================================================================
-def plot_sectional_energy_overlayed(y: np.ndarray,
+def plot_sectional_energy_overlayed(abscissa: np.ndarray,
                                     power: Mapping[int, PowerCheck],
                                     normalize: bool = True,
                                     ) -> Figure:
@@ -119,10 +180,15 @@ def plot_sectional_energy_overlayed(y: np.ndarray,
 
     colors = mpl.colormaps[CMAP](np.linspace(0, 1, len(power)))
     for i, (param, pwr) in enumerate(power.items()):
+        if isinstance(abscissa, list):
+            abscissa_i = abscissa[i]
+        else:
+            abscissa_i = abscissa
+
         factor = param**2 if normalize else 1.0
-        ax.plot(y, pwr.sectional_energy/factor,
+        ax.plot(abscissa_i, pwr.sectional_energy[span_mask]/factor,
                 c=colors[i], label=param, zorder=1)
-    ax.set_xlabel("Spanwise station y [m]")
+    ax.set_xlabel(ABSCISSA_COORD.value)
     ax.set_ylabel("Sectional energy injection [J/m]")
     ax.set_title("Sectional aerodynamic energy injection")
     ax.grid(alpha=.8, zorder=0)
@@ -133,12 +199,59 @@ def plot_sectional_energy_overlayed(y: np.ndarray,
 
 power_dict = {wind_speed: results[wind_speed].power
               for wind_speed in WIND_SPEEDS}
-fig_pwr = plot_sectional_energy_overlayed(
-    y=results[WIND_SPEEDS[0]].force_file.data.y,
-    power=power_dict)
-fig_pwr_name = "power_sectional"
+fig_pwr = plot_sectional_energy_overlayed(abscissa=abscissa, power=power_dict)
+fig_pwr_name = "power_sectional_" + ABSCISSA_COORD.name.lower()
 fig_pwr.savefig(OUTPUT_DIR / (fig_pwr_name + ".png"), dpi=150)
 fig_pwr.savefig(OUTPUT_DIR / (fig_pwr_name + ".svg"))
+
+
+def plot_sectional_energy_pcolormesh(
+    abscissa: np.ndarray | list[np.ndarray],
+    power: Mapping[int, PowerCheck],
+    normalize: bool = True,
+) -> Figure:
+    """Plot sectional energy as a pcolormesh."""
+
+    wind_speeds = np.array(list(power.keys()))
+
+    # Assemble data matrix
+    Z = []
+    for wind_speed, pwr in power.items():
+        factor = wind_speed**2 if normalize else 1.0
+        Z.append(pwr.sectional_energy[span_mask] / factor)
+
+    Z = np.asarray(Z)        # shape = (n_wind, n_sections)
+
+    # Coordinate arrays
+    if isinstance(abscissa, list):
+        # Reduced velocity case: x changes with wind speed
+        X = np.asarray(abscissa)
+    else:
+        # Span position or chord
+        X = np.tile(abscissa, (len(wind_speeds), 1))
+
+    Y = np.tile(wind_speeds[:, None], (1, X.shape[1]))
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+
+    pcm = ax.pcolormesh(X, Y, Z, shading="auto", cmap=CMAP)
+
+    cbar = fig.colorbar(pcm, ax=ax)
+    cbar.set_label("Sectional energy injection [J/m]")
+
+    ax.set_xlabel(ABSCISSA_COORD.value)
+    ax.set_ylabel("Wind speed [m/s]")
+    ax.set_title("Sectional aerodynamic energy injection")
+
+    fig.tight_layout()
+    return fig
+
+
+fig_pwr_mesh = plot_sectional_energy_pcolormesh(abscissa=abscissa,
+                                                power=power_dict)
+fig_pwr_mesh_name = "power_sectional_mesh_" + ABSCISSA_COORD.name.lower()
+fig_pwr_mesh.savefig(OUTPUT_DIR / (fig_pwr_mesh_name + ".png"), dpi=150)
+fig_pwr_mesh.savefig(OUTPUT_DIR / (fig_pwr_mesh_name + ".svg"))
 
 
 # =============================================================================
