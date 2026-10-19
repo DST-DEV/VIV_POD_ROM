@@ -158,8 +158,8 @@ def spectral_summary_text(result: SpectralAnalysisResult,
              f"frame = '{result.frame.name}', field = '{config.field}', "
              f"f_forcing = {config.f_forcing} Hz, "
              f"{len(result.t)} snapshots spanning ~{result.n_periods:.1f} "
-             f"forcing periods",
-             "",
+             f"forcing periods"]
+    lines += ["",
              "--- Dominant frequencies by station ---",
              f"{'component':>9} {'station':>9} {'y [m]':>8} "
              f"{'f_peak [Hz]':>12} {'f/f_forcing':>12}"]

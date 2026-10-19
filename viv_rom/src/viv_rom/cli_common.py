@@ -30,6 +30,9 @@ def add_case_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--f-forcing", type=float, default=d.f_forcing,
                         help="excitation frequency [Hz] "
                              "(default: %(default)s)")
+    parser.add_argument("--blade-file", type=Path, default=d.blade_file,
+                        help="windIO blade description (chord, twist) used "
+                             "by the 'inflow' frame (default: %(default)s)")
     parser.add_argument("-o", "--output-dir", type=Path, default=None,
                         help="figure output folder (default: "
                              "results/<case>/u<speed>/<method>); with a "
@@ -52,7 +55,8 @@ def case_kwargs(args: argparse.Namespace) -> dict:
     """:class:`CaseConfig` keyword arguments from parsed CLI arguments."""
     return {**parse_case(args.case), "data_dir": args.data_dir,
             "wind_speed": args.wind_speed, "n_skip": args.n_skip,
-            "n_last": args.n_last, "f_forcing": args.f_forcing}
+            "n_last": args.n_last, "f_forcing": args.f_forcing,
+            "blade_file": args.blade_file}
 
 
 def setup_runtime() -> None:

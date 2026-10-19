@@ -27,13 +27,16 @@ class SpectralConfig(CaseConfig):
     ----------
     frame : str or ForceFrame
         Coordinate frame the forces are rotated into before every analysis:
-        ``"blade"`` (default, the CFD ``Fx``/``Fz``), ``"motion"`` (along /
-        normal to the local direction of motion, ``F_par``/``F_perp``), or a
+        ``"blade"`` (the CFD ``Fx``/``Fz``), ``"motion"`` (default; along /
+        normal to the local direction of motion, ``F_par``/``F_perp``),
+        ``"inflow"`` (along / normal to the free stream, ``F_D``/``F_L``;
+        uses the case's pitch and inclination and ``blade_file``), or a
         :class:`~viv_rom.domain.frames.ForceFrame` instance.
     field : str
         Component(s) analysed station-by-station: ``"both"`` or one of the
         frame's keys (``"fx"``/``"fz"`` in the blade frame,
-        ``"fpar"``/``"fperp"`` in the motion frame).
+        ``"fpar"``/``"fperp"`` in the motion frame, ``"fdrag"``/``"flift"``
+        in the inflow frame).
     stations : tuple of int
         Spanwise station indices for the PSD plots / summary table
         (0 = root; the defaults assume 100 sections).
@@ -109,7 +112,9 @@ class SpectralConfig(CaseConfig):
     def frame_instance(self) -> ForceFrame:
         """The configured force frame as an object."""
         if isinstance(self.frame, str):
-            return make_frame(self.frame, self.motion)
+            return make_frame(self.frame, self.motion, pitch=self.pitch,
+                              inclination=self.inclination,
+                              blade_file=self.blade_file)
         return self.frame
 
     @property

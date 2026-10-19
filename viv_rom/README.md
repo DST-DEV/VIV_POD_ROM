@@ -13,7 +13,7 @@ Methods (one subpackage each):
 
 ## Install
 
-    pip install -e .[dev]
+    pip install -e .[dev]     # pulls in numpy, scipy, matplotlib, pyyaml
     pytest
 
 ## Command line
@@ -117,6 +117,29 @@ Results: `result.energy` (`.n_required`, `.modes`, `.mode_totals`,
   rotation is orthonormal and `F_par` carries all of the sectional power.
   New frames: implement `ForceFrame` (`name`, `labels`, `transform`) and
   `@register_frame("name")`.
+* **Inflow frame** (`--frame inflow`, `--blade-file`). Resolves `(Fx, Fz)` of
+  every section along the local flow and normal to it: `F_D` (`fdrag`) and
+  `F_L` (`flift`, +90 deg from it in the (x, z) plane). The vortex-shedding
+  force that carries the Strouhal frequency is `F_L`; the drag oscillates at
+  twice that. Convention (`viv_rom/domain/inflow.py`): the inflow has a
+  fixed direction `x_0`; the root frame (forces, motion) is `x_0` rotated
+  clockwise by the pitch (angles from `+x` towards `+z`); the twist turns each section counter-clockwise, so `alpha(y) = pitch - twist(y)`. Since the forces
+  are given in the blade root coordinate frame, only the twist is needed for
+  the force rotation into the flow-aligned frame (neglecting the movement of
+  the blade).
+  Chord and twist come from a windIO file (default
+  `data/IEA_10MW/IEA-10-198-RWT.yaml`, loaded lazily and only for the local
+  flow quantities): `frame.angle_of_attack(y)`, `frame.projected_width(y)`
+  (`D = c |sin alpha|`, the length scale for a local Strouhal number) and
+  `frame.normal_speed(U)` (`U cos(inclination)`; the inclination does not
+  change the in-plane flow direction). The CFD station `y` is measured from
+  the rotor axis, the blade span is `r = y - 2.8 m`.
+
+        from viv_rom.domain import InflowAlignedFrame
+        frame = InflowAlignedFrame(pitch=85, inclination=50)
+        frame.angle_of_attack(y)         # rad, per station
+        viv spectral ... --frame inflow --field flift
+
 * **Force at the forcing frequency** (`spectral/forcing_response.py`,
   `--response-harmonics H`, `--no-forcing-response`). Joint least-squares
   fit of `f_forcing` and harmonics `1..H` per station and component: amplitude
@@ -197,7 +220,8 @@ SPOD mode, whereas the real POD of the same data needs several.
       config.py  loading.py  signal_utils.py    shared by all methods
       cli.py  cli_common.py                      `viv <method>` umbrella CLI
       domain/   data.py, motion.py, frames.py     data containers, forced motion,
-                                                 force frames
+                blade.py, inflow.py                force frames, windIO blade
+                                                 geometry, inflow conventions
       readers/  cfd_reader.py                    HyReader (.1HY files)
       pod/      config core normalization preprocessing energy_injection phase
                 power plotting pipeline cli

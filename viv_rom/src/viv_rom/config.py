@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from viv_rom.domain.blade import DEFAULT_BLADE_FILE
 from viv_rom.domain.motion import FIRST_EDGEWISE_MODE, ForcedMotion
 
 _CASE_RE = re.compile(r"^a(?P<amplitude>\d+)_p(?P<pitch>\d+)_i(?P<incl>\d+)$")
@@ -48,6 +49,9 @@ class CaseConfig:
         Motion amplitude factor ``A`` used wherever the prescribed velocity
         enters (power, energy injection, work weighting). ``None`` uses
         ``float(amplitude)`` (case a01 -> A = 1.0).
+    blade_file : Path
+        windIO ``.yaml`` description of the blade (chord, twist), used by
+        the ``inflow`` frame. Default ``data/IEA_10MW/IEA-10-198-RWT.yaml``.
     """
     data_dir: Path = Path("./data/archive_1D")
     amplitude: int = 1
@@ -59,9 +63,11 @@ class CaseConfig:
     f_forcing: float = 0.624
     motion: ForcedMotion = field(default=FIRST_EDGEWISE_MODE, repr=False)
     motion_amplitude: float | None = None
+    blade_file: Path = DEFAULT_BLADE_FILE
 
     def __post_init__(self):
         self.data_dir = Path(self.data_dir)
+        self.blade_file = Path(self.blade_file)
 
     @classmethod
     def from_case(cls, case: str, **kwargs):
