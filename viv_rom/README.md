@@ -196,6 +196,23 @@ Results: `result.energy` (`.n_required`, `.modes`, `.mode_totals`,
   damping cycles, per station and for the blade. Needs several complete cycles
   (with fewer than 3 the spread is flagged unreliable).
 
+* **Vortex-shedding frequency and lock-in range** (`spectral/shedding.py`,
+  `--no-shedding`, `--strouhal LOW HIGH`, `--lock-in-band LOW HIGH`). Each
+  section is treated as a bluff body: `f_vs(y) = St * U / D(y)` with
+  `D = c |sin(alpha)|`, the chord projected normal to the flow (the
+  cross-flow width, from the inflow frame and the windIO blade), and `U`
+  the *nominal* wind speed (not reduced by the inclination). `St` is the
+  range 0.11-0.16 that Pellegrino & Meskell (2013) found for the NREL S809
+  in 2D at high angles of attack: a rough guide here, since other airfoils
+  and 3D flow are involved. The result is a band `[f_low, f_high]` per
+  station. Lock-in may occur for `f_vs / f_n` of about 0.8-1.1 (amplitude
+  dependent), so stations whose band overlaps `[0.8, 1.1] * f_forcing` are
+  reported as *possible* lock-in, those entirely inside as *certain*
+  (`result.shedding.possible_lock_in`, `.certain_lock_in`, `.spans()`).
+  Figure `07_shedding_frequency` shows the band along the span with the
+  forcing frequency and the lock-in range. Needs the blade file
+  (`--blade-file`); without it the estimate is skipped with a warning.
+
     viv spectral ... --frame motion --field both --response-harmonics 3
 
 `viv spectral` prints its text summary and also saves it as
@@ -265,8 +282,8 @@ SPOD mode, whereas the real POD of the same data needs several.
       io/       cfd_reader, export               Load .1HY files, save/load results (.npz)
       pod/      config core normalization preprocessing energy_injection phase
                 power plotting pipeline cli
-      spectral/ config core forcing_response cycle_energy plotting sweep pipeline
-                cli
+      spectral/ config core forcing_response cycle_energy shedding plotting sweep
+                pipeline cli
       spod/     config weights blocks core locking injection analysis plotting
                 pipeline cli
 

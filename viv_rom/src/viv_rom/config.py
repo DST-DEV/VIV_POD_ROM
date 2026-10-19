@@ -41,6 +41,10 @@ class CaseConfig:
     n_last : int or None
         Rows kept after ``n_skip``. ``None`` keeps everything (recommended:
         several periods, so lock-in / beating behaviour is visible).
+    y_root : float or None
+        Blade root diameter [m]. Only spanwise stations with y larger or equal
+        than this value are considered. If None, consider all spanwise
+        positions.
     f_forcing : float
         Prescribed excitation frequency [Hz].
     motion : ForcedMotion
@@ -60,6 +64,7 @@ class CaseConfig:
     wind_speed: int = 10
     n_skip: int = 1200
     n_last: int | None = None
+    y_root: float | None = 2.8
     f_forcing: float = 0.624
     motion: ForcedMotion = field(default=FIRST_EDGEWISE_MODE, repr=False)
     motion_amplitude: float | None = None

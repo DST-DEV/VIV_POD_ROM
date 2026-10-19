@@ -7,6 +7,8 @@ from viv_rom.config import CaseConfig
 from viv_rom.domain.frames import (ForceFrame,
                                    available_frames, make_frame)
 from viv_rom.domain.motion import FIRST_EDGEWISE_MODE
+from viv_rom.spectral.shedding import (LOCK_IN_BAND, STROUHAL_RANGE,
+                                       validate_range)
 
 
 def available_fields() -> tuple[str, ...]:
@@ -38,8 +40,8 @@ class SpectralConfig(CaseConfig):
         ``"fpar"``/``"fperp"`` in the motion frame, ``"fdrag"``/``"flift"``
         in the inflow frame).
     stations : tuple of int
-        Spanwise station indices for the PSD plots / summary table
-        (0 = root; the defaults assume 100 sections).
+        Spanwise station indices for the PSD plots / summary table as a
+        percentage of the number of stations (0 = root, 100 = tip).
     n_harmonics : int
         Number of integer harmonics of ``f_forcing`` to mark.
     nperseg : int or None
@@ -73,10 +75,19 @@ class SpectralConfig(CaseConfig):
         Harmonics ``1..n`` of the forcing frequency fitted for it.
     do_cycle_energy : bool
         Energy injected per forcing cycle and its cycle-to-cycle spread.
+    do_shedding : bool
+        Estimate the vortex-shedding frequency band along the span from the
+        Strouhal range and compare it with the forcing frequency (needs the
+        blade geometry, ``blade_file``; skipped with a warning if missing).
+    strouhal_range : (float, float)
+        ``(St_low, St_high)`` used for the shedding estimate; the default
+        0.11-0.16 is that of Pellegrino & Meskell (2013, NREL S809, 2D).
+    lock_in_band : (float, float)
+        Lock-in range as multiples of ``f_forcing`` (default 0.8-1.1).
     """
     frame: str | ForceFrame = "motion"
     field: str = "both"
-    stations: tuple[int, ...] = (0, 25, 50, 75, 99)
+    stations: tuple[int, ...] = (0, 25, 50, 75, 100)
     n_harmonics: int = 6
     nperseg: int | None = None
     spectrogram_nperseg: int | None = None
@@ -92,6 +103,9 @@ class SpectralConfig(CaseConfig):
     do_forcing_response: bool = True
     response_harmonics: int = 3
     do_cycle_energy: bool = True
+    do_shedding: bool = True
+    strouhal_range: tuple[float, float] = STROUHAL_RANGE
+    lock_in_band: tuple[float, float] = LOCK_IN_BAND
 
     def __post_init__(self):
         super().__post_init__()
@@ -106,6 +120,9 @@ class SpectralConfig(CaseConfig):
                              f"(use one of {keys}).")
         if self.response_harmonics < 1:
             raise ValueError("response_harmonics must be >= 1.")
+        self.strouhal_range = validate_range("strouhal_range",
+                                             self.strouhal_range)
+        self.lock_in_band = validate_range("lock_in_band", self.lock_in_band)
         self.stations = tuple(self.stations)
         self.u_sweep_list = tuple(self.u_sweep_list)
 

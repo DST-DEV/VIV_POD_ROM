@@ -55,7 +55,8 @@ class HyReader:
 
     def retrieve_force_field(self, amplitude: float, pitch: float,
                              inclination: float, wind_speed: float,
-                             n_skip: int = 0, n_last: None | int = None
+                             n_skip: int = 0, n_last: None | int = None,
+                             y_root: None | float = None
                              ) -> ForceFieldFile:
         """Retrieve a force field file given a simulation parameter set.
 
@@ -73,6 +74,10 @@ class HyReader:
         n_last : None | int, optional
             Number of rows to retain after ``n_skip``. If ``None``, all
             remaining rows are retained. Default is ``None``.
+        y_root : None | float, optional
+            Blade root diameter [m]. Only spanwise stations with y larger or
+            equal than this value are kept. If None, keep all values.
+            Default is None.
 
         Returns
         -------
@@ -87,7 +92,8 @@ class HyReader:
                                              speed=wind_speed)
 
         file_path = self.data_dir / (file_name + ".1HY")
-        data = self.read_hy(path=file_path, n_skip=n_skip, n_last=n_last)
+        data = self.read_hy(path=file_path, n_skip=n_skip, n_last=n_last,
+                            y_root=y_root)
 
         return ForceFieldFile(
             source_file=file_path,
@@ -99,7 +105,8 @@ class HyReader:
         )
 
     @staticmethod
-    def read_hy(path: Path, n_skip: int = 0, n_last: None | int = None
+    def read_hy(path: Path, n_skip: int = 0, n_last: None | int = None,
+                y_root: None | float = None
                 ) -> ForceFieldData:
         """Load a ``.1HY`` sectional-force file.
 
@@ -121,6 +128,10 @@ class HyReader:
             Number of rows to skip at the beginning of the file. Default is 0.
         n_last : None | int, optional
             Number or rows to keep after n_skip. If None, keep all rows.
+            Default is None.
+        y_root : None | float, optional
+            Blade root diameter [m]. Only spanwise stations with y larger or
+            equal than this value are kept. If None, keep all values.
             Default is None.
 
         Returns
@@ -148,4 +159,10 @@ class HyReader:
         t = data[:, 1]
         Fx = data[:, 3 + 4 * j]
         Fz = data[:, 5 + 4 * j]
+
+        if y_root:
+            y_mask = y >= y_root
+            y = y[y_mask]
+            Fx = Fx[:, y_mask]
+            Fz = Fz[:, y_mask]
         return ForceFieldData(y=y, t=t, Fx=Fx.T, Fz=Fz.T)

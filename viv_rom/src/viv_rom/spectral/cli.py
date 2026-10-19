@@ -76,6 +76,19 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                              "the amplitude/phase")
     parser.add_argument("--no-cycle-energy", action="store_true",
                         help="skip the cycle-by-cycle energy injection")
+    parser.add_argument("--no-shedding", action="store_true",
+                        help="skip the vortex-shedding frequency estimate "
+                             "along the span")
+    parser.add_argument("--strouhal", type=float, nargs=2,
+                        default=list(d.strouhal_range),
+                        metavar=("LOW", "HIGH"),
+                        help="Strouhal range for the shedding estimate "
+                             "(default: %(default)s)")
+    parser.add_argument("--lock-in-band", type=float, nargs=2,
+                        default=list(d.lock_in_band),
+                        metavar=("LOW", "HIGH"),
+                        help="lock-in range as multiples of the forcing "
+                             "frequency (default: %(default)s)")
 
 
 def build_config(args: argparse.Namespace) -> SpectralConfig:
@@ -94,7 +107,10 @@ def build_config(args: argparse.Namespace) -> SpectralConfig:
         u_sweep_list=tuple(args.u_sweep), sweep_field=args.sweep_field,
         do_forcing_response=not args.no_forcing_response,
         response_harmonics=args.response_harmonics,
-        do_cycle_energy=not args.no_cycle_energy)
+        do_cycle_energy=not args.no_cycle_energy,
+        do_shedding=not args.no_shedding,
+        strouhal_range=tuple(args.strouhal),
+        lock_in_band=tuple(args.lock_in_band))
 
 
 def run_from_args(args: argparse.Namespace) -> int:

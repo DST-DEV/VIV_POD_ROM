@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from viv_rom.domain.data import ForceFieldFile
-from viv_rom.domain.frames import ForceFrame
+from viv_rom.domain.frames import ForceFrame, InflowAlignedFrame, make_frame
 from viv_rom.io.results.export import save_result
 from viv_rom.loading import load_case
 from viv_rom.spectral import plotting
@@ -34,6 +34,7 @@ from viv_rom.spectral.cycle_energy import (CycleEnergy,
                                            cycle_energy_analysis)
 from viv_rom.spectral.forcing_response import (ForcingResponse,
                                                forcing_frequency_response)
+from viv_rom.spectral.shedding import SheddingFrequencies, shedding_frequencies
 from viv_rom.spectral.sweep import SweepResult, frequency_sweep
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,9 @@ class SpectralAnalysisResult:
     Attributes
     ----------
     station_peaks : dict of {"fx"/"fz": ndarray}
-        Dominant frequency [Hz] at each of ``config.stations``.
+        Dominant frequency [Hz] at each of ``station_idxs``.
+    station_idxs : list[int]
+        Indices of the selected stations for the analysis
     frame : ForceFrame
         Frame the forces were rotated into before analysis.
     sweep : SweepResult or None
@@ -56,15 +59,20 @@ class SpectralAnalysisResult:
         Amplitude/phase of the force at the forcing frequency.
     cycle_energy : CycleEnergy or None
         Per-cycle energy injection.
+    shedding : SheddingFrequencies or None
+        Shedding-frequency band per station from the Strouhal range, and
+        where it overlaps the lock-in band.
     """
     force_file: ForceFieldFile
     dt: float
     n_periods: float
+    station_idxs: list[int]
     station_peaks: dict[str, np.ndarray]
     frame: ForceFrame
     sweep: SweepResult | None = None
     forcing_response: ForcingResponse | None = None
     cycle_energy: CycleEnergy | None = None
+    shedding: SheddingFrequencies | None = None
 
     def components(self, field: str = "both") -> dict[str, np.ndarray]:
         """Forces in the analysis frame, ``{key: (n_stations, n_steps)}``."""
@@ -100,10 +108,16 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
         frame.transform(y, force_file.data.Fx, force_file.data.Fz))
 
     n_sections = len(y)
-    if config.stations and max(config.stations) >= n_sections:
-        raise ValueError(
-            f"Station index {max(config.stations)} out of range: the file "
-            f"has {n_sections} sections (valid indices 0-{n_sections - 1}).")
+    station_idxs = None
+    if config.stations:
+        if min(config.stations) < 0 or max(config.stations) > 100:
+            raise ValueError("Station indices out of range: All station "
+                             "indices must be within [0, 100].")
+
+        station_idxs = np.array(
+            np.floor([(n_sections - 1) * station/100
+                      for station in sorted(config.stations)]),
+            dtype=int)
 
     dt = t[1] - t[0]
     n_periods = (t[-1] - t[0]) / (1.0 / config.f_forcing)
@@ -115,7 +129,7 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
     station_peaks = {}
     for key, data in components.items():
         peaks = []
-        for st in config.stations:
+        for st in station_idxs:
             freqs, psd = compute_psd(data[st, :], dt, config.nperseg)
             peaks.append(dominant_peaks(freqs, psd, n_peaks=1)[0][0])
         station_peaks[key] = np.array(peaks)
@@ -139,10 +153,38 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
             vz=config.motion.velocity("z", y, t, amplitude, omega),
             y=y, t=t, f_forcing=config.f_forcing)
 
+    shedding = estimate_shedding(config, y, frame) \
+        if config.do_shedding else None
+
     return SpectralAnalysisResult(
         force_file=force_file, dt=dt, n_periods=n_periods,
-        station_peaks=station_peaks, frame=frame, sweep=sweep,
-        forcing_response=forcing_response, cycle_energy=cycle_energy)
+        station_peaks=station_peaks, station_idxs=list(station_idxs),
+        frame=frame, sweep=sweep,
+        forcing_response=forcing_response, cycle_energy=cycle_energy,
+        shedding=shedding)
+
+
+def estimate_shedding(config: SpectralConfig, y: np.ndarray,
+                      frame: ForceFrame | None = None
+                      ) -> SheddingFrequencies | None:
+    """Shedding band per station for the case's inflow (nominal wind speed).
+
+    Uses the analysis frame if it is an inflow frame, otherwise an inflow
+    frame of the case (pitch, inclination, ``blade_file``). Returns ``None``
+    with a warning if the blade file does not exist.
+    """
+    if not isinstance(frame, InflowAlignedFrame):
+        frame = make_frame("inflow", config.motion, pitch=config.pitch,
+                           inclination=config.inclination,
+                           blade_file=config.blade_file)
+    try:
+        return shedding_frequencies(
+            frame, y, wind_speed=config.wind_speed,
+            f_forcing=config.f_forcing, strouhal=config.strouhal_range,
+            lock_in_band=config.lock_in_band)
+    except FileNotFoundError as err:
+        logger.warning("Skipping the shedding-frequency estimate: %s", err)
+        return None
 
 
 SUMMARY_FILENAME = "spectral_summary.txt"
@@ -166,15 +208,18 @@ def spectral_summary_text(result: SpectralAnalysisResult,
              f"{'component':>9} {'station':>9} {'y [m]':>8} "
              f"{'f_peak [Hz]':>12} {'f/f_forcing':>12}"]
     # for key, peaks in result.station_peaks.items():
-    #     for st, f_peak in zip(config.stations, peaks):
+    #     for st, f_peak in zip(station_idxs, peaks):
     #         lines.append(f"{key:>9} {st:9d} {result.y[st]:8.1f} "
     #                      f"{f_peak:12.4f} {f_peak / config.f_forcing:12.3f}")
 
     if result.forcing_response is not None:
         lines += [""] + result.forcing_response.summary_lines(
-            config.stations, result.frame.labels)
+            result.station_idxs, result.frame.labels)
     if result.cycle_energy is not None:
-        lines += [""] + result.cycle_energy.summary_lines(config.stations)
+        lines += [""] + result.cycle_energy.summary_lines(result.station_idxs)
+
+    if result.shedding is not None:
+        lines += [""] + result.shedding.summary_lines(result.station_idxs)
 
     if result.sweep is not None:
         lines += ["", f"--- Frequency sweep over U for case '{config.case}' "
@@ -224,7 +269,7 @@ def write_figures(result: SpectralAnalysisResult, config: SpectralConfig,
                   labels=labels)
 
     figures = {"01_station_psd": plotting.plot_station_psd(
-        y, t, components, config.stations, nperseg=config.nperseg, **common)}
+        y, t, components, result.station_idxs, nperseg=config.nperseg, **common)}
 
     if config.do_spanwise_map:
         figures["02_spanwise_psd_map"] = plotting.plot_spanwise_map(
@@ -263,7 +308,11 @@ def write_figures(result: SpectralAnalysisResult, config: SpectralConfig,
             result.forcing_response, harmonic=1, labels=labels)
     if result.cycle_energy is not None:
         figures["06_cycle_energy"] = plotting.plot_cycle_energy(
-            result.cycle_energy, config.stations)
+            result.cycle_energy, result.station_idxs)
+
+    if result.shedding is not None:
+        figures["07_shedding_frequency"] = plotting.plot_shedding_frequency(
+            result.shedding)
 
     paths = []
     for name, fig in figures.items():

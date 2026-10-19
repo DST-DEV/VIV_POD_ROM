@@ -27,4 +27,4 @@ def load_case(config: CaseConfig, wind_speed: int | None = None
         amplitude=config.amplitude, pitch=config.pitch,
         inclination=config.inclination,
         wind_speed=config.wind_speed if wind_speed is None else wind_speed,
-        n_skip=config.n_skip, n_last=config.n_last)
+        n_skip=config.n_skip, n_last=config.n_last, y_root=config.y_root)

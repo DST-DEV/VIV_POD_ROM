@@ -16,6 +16,7 @@ from matplotlib.figure import Figure
 
 from viv_rom.spectral.cycle_energy import CycleEnergy
 from viv_rom.spectral.forcing_response import ForcingResponse
+from viv_rom.spectral.shedding import SheddingFrequencies
 from viv_rom.spectral.core import (COMPONENT_LABELS, compute_psd,
                                    compute_spanwise_amplitude,
                                    compute_spanwise_phase,
@@ -284,5 +285,53 @@ def plot_cycle_energy(cycle: CycleEnergy, stations: Sequence[int]) -> Figure:
     ax2.set_title("Spanwise energy injection per cycle")
     ax2.legend(fontsize=8)
     ax2.grid(alpha=.8, zorder=0)
+    fig.tight_layout()
+    return fig
+
+
+def plot_shedding_frequency(shedding: SheddingFrequencies,
+                            f_max_factor: float = 3.0) -> Figure:
+    """Shedding-frequency band along the span against the lock-in range.
+
+    The blue band spans the shedding frequency for the lower to the upper
+    Strouhal number. The dashed line is the forcing (= natural) frequency,
+    the orange band the lock-in range around it, and the shaded columns
+    mark stations whose shedding band overlaps the lock-in range. The
+    shedding frequency grows without bound where the projected width goes
+    to zero (tip), so the frequency axis ends at ``f_max_factor`` times the
+    forcing frequency; the right axis gives ``f / f_forcing``.
+    """
+    s = shedding
+    f_n = s.f_forcing
+    lock_lo, lock_hi = s.lock_in_frequencies
+    f_top = f_max_factor * f_n
+
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    ax.axhspan(lock_lo, lock_hi, color="C1", alpha=0.25, lw=0,
+               label=f"lock-in range ({s.lock_in_band[0]:g}-"
+                     f"{s.lock_in_band[1]:g} $f_n$)")
+    ax.fill_between(s.y, 0, f_top, where=s.possible_lock_in,
+                    step="mid", color="0.5", alpha=0.15, lw=0,
+                    label="shedding band overlaps lock-in range")
+    ax.fill_between(s.y, s.f_low, s.f_high, color="C0", alpha=0.35, lw=0,
+                    label=f"shedding frequency, St = {s.strouhal[0]:g}-"
+                          f"{s.strouhal[1]:g}")
+    ax.plot(s.y, s.f_low, color="C0", lw=1.2,
+            label=f"St = {s.strouhal[0]:g}")
+    ax.plot(s.y, s.f_high, color="C0", lw=1.2, ls="--",
+            label=f"St = {s.strouhal[1]:g}")
+    ax.axhline(f_n, color="k", ls="--", lw=1.2,
+               label=f"natural / forcing frequency ({f_n:.3g} Hz)")
+
+    ax.set_xlim(s.y[0], s.y[-1])
+    ax.set_ylim(0, f_top)
+    ax.set_xlabel("spanwise station y [m]")
+    ax.set_ylabel("frequency [Hz]")
+    ax.set_title(f"Estimated vortex-shedding frequency, U = "
+                 f"{s.wind_speed:g} m/s, D = c|sin $\\alpha$|")
+    ax.secondary_yaxis("right", functions=(lambda f: f / f_n,
+                                           lambda r: r * f_n)
+                       ).set_ylabel("$f / f_n$")
+    ax.legend(fontsize=7, loc="upper left")
     fig.tight_layout()
     return fig

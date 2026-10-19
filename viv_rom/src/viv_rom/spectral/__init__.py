@@ -15,6 +15,8 @@ from viv_rom.spectral.cycle_energy import (CycleEnergy, CycleStatistics,
                                            per_cycle_integral)
 from viv_rom.spectral.forcing_response import (ForcingResponse,
                                                forcing_frequency_response)
+from viv_rom.spectral.shedding import (SheddingFrequencies,
+                                       shedding_frequencies)
 from viv_rom.spectral.sweep import SweepResult, frequency_sweep
 
 __all__ = ["SpectralConfig", "compute_psd", "compute_spanwise_psd",
@@ -23,6 +25,7 @@ __all__ = ["SpectralConfig", "compute_psd", "compute_spanwise_psd",
            "dominant_peaks",
            "integrate_over_span",
            "SweepResult", "frequency_sweep",
+           "SheddingFrequencies", "shedding_frequencies",
            "ForcingResponse", "forcing_frequency_response",
            "CycleEnergy", "CycleStatistics", "cycle_energy_analysis",
            "cycle_statistics", "per_cycle_integral",
