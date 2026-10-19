@@ -19,6 +19,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from viv_rom.io.results.export import save_result
 from viv_rom.pod import plotting
 from viv_rom.loading import load_case
 from viv_rom.pod.config import PODConfig
@@ -37,6 +38,7 @@ from viv_rom.pod.preprocessing import (PhysicalReconstructor, Preprocessing,
 from viv_rom.signal_utils import dominant_frequency
 
 logger = logging.getLogger(__name__)
+EXPORT_FILENAME = "pod_results.npz"
 
 
 @dataclass(frozen=True, eq=False)
@@ -306,12 +308,31 @@ def write_figures(result: PODAnalysisResult, config: PODConfig,
     return paths
 
 
-def run(config: PODConfig, output_dir: Path | None = None
-        ) -> PODAnalysisResult:
-    """Analyse a case, log a summary and write the figures."""
+def write_results(result: PODAnalysisResult, config: PODConfig,
+                  output_dir: Path, include_raw: bool = True) -> Path:
+    """Save result and config to ``output_dir / pod_results.npz``.
+
+    Reload with :func:`viv_rom.export.load_result`. ``include_raw=False``
+    leaves out the raw force field (``Fx``, ``Fz`` and ``field``).
+    """
+    return save_result(result, config, Path(output_dir) / EXPORT_FILENAME,
+                       include_raw=include_raw)
+
+
+def run(config: PODConfig, output_dir: Path | None = None,
+        export: bool = True, export_raw: bool = True) -> PODAnalysisResult:
+    """Analyse a case, log a summary, write the figures and the export.
+
+    ``export`` saves result and config to ``pod_results.npz``
+    (:func:`write_results`); ``export_raw=False`` omits the raw force field
+    from it.
+    """
     output_dir = Path(output_dir or config.default_output_dir)
     result = analyse(config)
     log_summary(result, config, output_dir)
     write_figures(result, config, output_dir)
     logger.info("\nFigures written to: %s", output_dir.resolve())
+    if export:
+        path = write_results(result, config, output_dir, export_raw)
+        logger.info("Results exported to: %s", path.resolve())
     return result

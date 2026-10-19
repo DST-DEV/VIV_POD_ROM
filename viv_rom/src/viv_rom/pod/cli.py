@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+from functools import partial
 
-from viv_rom.cli_common import (add_case_arguments, case_kwargs,
+from viv_rom.cli_common import (add_case_arguments, add_export_arguments,
+                                case_kwargs, export_kwargs,
                                 run_over_wind_speeds, setup_runtime)
 from viv_rom.pod.config import PODConfig
 from viv_rom.pod.normalization import available_normalizers
@@ -12,6 +14,7 @@ from viv_rom.pod.normalization import available_normalizers
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     default_config = PODConfig()
     add_case_arguments(parser)
+    add_export_arguments(parser)
     parser.add_argument("--field", choices=("fx", "fz", "combined"),
                         default=default_config.field,
                         help="force component(s) for POD")
@@ -77,7 +80,8 @@ def build_config(args: argparse.Namespace) -> PODConfig:
 def run_from_args(args: argparse.Namespace) -> int:
     setup_runtime()
     from viv_rom.pod.pipeline import run  # heavy import, deferred
-    return run_over_wind_speeds(args, build_config, run)
+    return run_over_wind_speeds(args, build_config,
+                                partial(run, **export_kwargs(args)))
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -57,9 +57,45 @@ speed that runs.
 
 `analyse` never plots or writes files; `write_figures` and `run` do.
 
+### Saving and reloading results
+
+Every run also saves its result and configuration to one file in the output
+folder: `pod_results.npz`, `spectral_results.npz` or `spod_results.npz`
+(next to the figures, so one file per wind speed in a range).
+
+    viv pod --case a01_p85_i50 -u 10 --no-export        # do not save
+    viv pod --case a01_p85_i50 -u 10 --no-export-raw    # smaller file
+
+`--no-export-raw` leaves out the raw force field (`Fx`, `Fz`, and the POD
+snapshot matrix `field`; `t` and `y` are kept). Everything computed is kept,
+but the loaded result then has `None` for the raw arrays, so methods that
+need them (e.g. `SpectralAnalysisResult.components`) are unavailable. The
+SPOD Fourier blocks (`blocks.q`) are kept as well and can be large.
+
+    from viv_rom.io.export import load_result, save_result
+
+    result, config = load_result("results/a01_p85_i50/u10/pod/pod_results.npz")
+    # -> PODAnalysisResult, PODConfig (SpectralAnalysisResult/SpectralConfig
+    #    and SPODAnalysisResult/SPODConfig for the other methods)
+    save_result(result, config, "copy.npz", include_raw=False)
+
+The file is a compressed NumPy archive: the arrays are stored natively and
+the nested dataclasses as a JSON description (`__meta__`) naming their
+classes. No pickle is used, and loading only instantiates classes from
+`viv_rom`, so a file cannot run foreign code. Consequently results that
+hold objects from outside the package (a user-defined `Normalizer`, a
+lambda as `energy_error_reference`) cannot be exported; `save_result`
+raises a `TypeError` naming the offending field. From Python,
+`pipeline.run(config, export=False, export_raw=False)` and
+`pipeline.write_results(result, config, output_dir)` do the same as the
+flags.
+
 ## POD preprocessing and normalization
 
-`analyse` prepares the snapshot matrix in two separate, explicit steps (`viv_rom/pod/preprocessing.py`): optional **normalization**, then **mean removal**. `compute_pod` only does the SVD of the prepared fluctuation field.
+`analyse` prepares the snapshot matrix in two separate, explicit steps
+(`viv_rom/pod/preprocessing.py`): optional **normalization**, then
+**mean removal**. `compute_pod` only does the SVD of the prepared fluctuation
+field.
 Normalization is off by default.
 
 | name | factor | effect |
@@ -73,7 +109,10 @@ Normalization is off by default.
     PODConfig.from_case("a01_p85_i50", normalization=("dynamic_pressure",))
     PODConfig.from_case("a01_p85_i50", normalization=(WorkWeightNormalizer(floor=1e-2),))
 
-Modes, singular values and temporal coefficients live in the normalized space; `result.reconstruct(r)` returns the rank-`r` field back in N/m. To add a strategy, implement `Normalizer.scales(ctx)` and decorate it with `@register_normalizer("name")` -- nothing else changes.
+Modes, singular values and temporal coefficients live in the normalized space;
+`result.reconstruct(r)` returns the rank-`r` field back in N/m. To add a
+strategy, implement `Normalizer.scales(ctx)` and decorate it with
+`@register_normalizer("name")` -- nothing else changes.
 
 ## Energy injection and harmonic phase
 
@@ -123,10 +162,11 @@ Results: `result.energy` (`.n_required`, `.modes`, `.mode_totals`,
   force that carries the Strouhal frequency is `F_L`; the drag oscillates at
   twice that. Convention (`viv_rom/domain/inflow.py`): the inflow has a
   fixed direction `x_0`; the root frame (forces, motion) is `x_0` rotated
-  clockwise by the pitch (angles from `+x` towards `+z`); the twist turns each section counter-clockwise, so `alpha(y) = pitch - twist(y)`. Since the forces
-  are given in the blade root coordinate frame, only the twist is needed for
-  the force rotation into the flow-aligned frame (neglecting the movement of
-  the blade).
+  clockwise by the pitch (angles from `+x` towards `+z`); the twist turns
+  each section counter-clockwise, so `alpha(y) = pitch - twist(y)`. Since the
+  forces are given in the blade root coordinate frame, only the twist is
+  needed for the force rotation into the flow-aligned frame (neglecting the
+  movement of the blade).
   Chord and twist come from a windIO file (default
   `data/IEA_10MW/IEA-10-198-RWT.yaml`, loaded lazily and only for the local
   flow quantities): `frame.angle_of_attack(y)`, `frame.projected_width(y)`
@@ -222,7 +262,7 @@ SPOD mode, whereas the real POD of the same data needs several.
       domain/   data.py, motion.py, frames.py     data containers, forced motion,
                 blade.py, inflow.py                force frames, windIO blade
                                                  geometry, inflow conventions
-      readers/  cfd_reader.py                    HyReader (.1HY files)
+      io/       cfd_reader, export               Load .1HY files, save/load results (.npz)
       pod/      config core normalization preprocessing energy_injection phase
                 power plotting pipeline cli
       spectral/ config core forcing_response cycle_energy plotting sweep pipeline

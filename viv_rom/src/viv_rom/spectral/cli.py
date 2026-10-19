@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+from functools import partial
 
-from viv_rom.cli_common import (add_case_arguments, case_kwargs,
+from viv_rom.cli_common import (add_case_arguments, add_export_arguments,
+                                case_kwargs, export_kwargs,
                                 run_over_wind_speeds, setup_runtime)
 from viv_rom.domain.frames import available_frames
 from viv_rom.spectral.config import SpectralConfig, available_fields
@@ -13,6 +15,7 @@ from viv_rom.spectral.config import SpectralConfig, available_fields
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     d = SpectralConfig()
     add_case_arguments(parser)
+    add_export_arguments(parser)
     parser.add_argument("--frame", choices=available_frames(),
                         default=d.frame,
                         help="coordinate frame the forces are rotated into "
@@ -99,7 +102,8 @@ def run_from_args(args: argparse.Namespace) -> int:
     from viv_rom.spectral.pipeline import run  # heavy import, deferred
     # The --u-sweep frequency sweep does not depend on --wind-speed, so in a
     # wind-speed range it is done once (for the first speed) only.
-    return run_over_wind_speeds(args, build_config, run,
+    return run_over_wind_speeds(args, build_config,
+                                partial(run, **export_kwargs(args)),
                                 adapt=without_frequency_sweep)
 
 

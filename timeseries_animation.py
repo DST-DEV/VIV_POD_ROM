@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.animation import FuncAnimation
 
-from viv_rom.io.cfd_reader import HyReader
+from viv_rom.io.cfd.cfd_reader import HyReader
 from viv_rom.domain.frames import MotionAlignedFrame
 from viv_rom.domain.motion import FIRST_EDGEWISE_MODE
 

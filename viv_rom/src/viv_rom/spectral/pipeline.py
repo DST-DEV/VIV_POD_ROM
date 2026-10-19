@@ -23,6 +23,7 @@ import numpy as np
 
 from viv_rom.domain.data import ForceFieldFile
 from viv_rom.domain.frames import ForceFrame
+from viv_rom.io.results.export import save_result
 from viv_rom.loading import load_case
 from viv_rom.spectral import plotting
 from viv_rom.spectral.config import SpectralConfig
@@ -36,6 +37,7 @@ from viv_rom.spectral.forcing_response import (ForcingResponse,
 from viv_rom.spectral.sweep import SweepResult, frequency_sweep
 
 logger = logging.getLogger(__name__)
+EXPORT_FILENAME = "spectral_results.npz"
 
 
 @dataclass(frozen=True, eq=False)
@@ -273,9 +275,26 @@ def write_figures(result: SpectralAnalysisResult, config: SpectralConfig,
     return paths
 
 
-def run(config: SpectralConfig, output_dir: Path | None = None
+def write_results(result: SpectralAnalysisResult, config: SpectralConfig,
+                  output_dir: Path, include_raw: bool = True) -> Path:
+    """Save result and config to ``output_dir / spectral_results.npz``.
+
+    Reload with :func:`viv_rom.export.load_result`. ``include_raw=False``
+    leaves out the raw force field (``Fx`` and ``Fz``).
+    """
+    return save_result(result, config, Path(output_dir) / EXPORT_FILENAME,
+                       include_raw=include_raw)
+
+
+def run(config: SpectralConfig, output_dir: Path | None = None,
+        export: bool = True, export_raw: bool = True
         ) -> SpectralAnalysisResult:
-    """Analyse a case, print and save the summary, write the figures."""
+    """Analyse a case, print and save the summary, write figures and export.
+
+    ``export`` saves result and config to ``spectral_results.npz``
+    (:func:`write_results`); ``export_raw=False`` omits the raw force field
+    from it.
+    """
     output_dir = Path(output_dir or config.default_output_dir)
     result = analyse(config)
     log_summary(result, config)
@@ -283,4 +302,7 @@ def run(config: SpectralConfig, output_dir: Path | None = None
     write_figures(result, config, output_dir)
     logger.info("\nSummary written to: %s", summary_path.resolve())
     logger.info("Figures written to: %s", output_dir.resolve())
+    if export:
+        path = write_results(result, config, output_dir, export_raw)
+        logger.info("Results exported to: %s", path.resolve())
     return result

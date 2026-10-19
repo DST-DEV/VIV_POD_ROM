@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from viv_rom.domain.data import ForceFieldFile
+from viv_rom.io.results.export import save_result
 from viv_rom.loading import load_case
 from viv_rom.pod.core import FieldInfo, build_field_matrix
 from viv_rom.pod.normalization import NormalizationContext
@@ -38,6 +39,7 @@ from viv_rom.spod.weights import make_inner_product
 
 logger = logging.getLogger(__name__)
 SUMMARY_FILENAME = "spod_summary.txt"
+EXPORT_FILENAME = "spod_results.npz"
 
 
 @dataclass(frozen=True, eq=False)
@@ -225,9 +227,25 @@ def write_figures(result: SPODAnalysisResult, config: SPODConfig,
     return paths
 
 
-def run(config: SPODConfig, output_dir: Path | None = None
-        ) -> SPODAnalysisResult:
-    """Analyse a case, print and save the summary, write the figures."""
+def write_results(result: SPODAnalysisResult, config: SPODConfig,
+                  output_dir: Path, include_raw: bool = True) -> Path:
+    """Save result and config to ``output_dir / spod_results.npz``.
+
+    Reload with :func:`viv_rom.export.load_result`. ``include_raw=False``
+    leaves out the raw force field (``Fx`` and ``Fz``).
+    """
+    return save_result(result, config, Path(output_dir) / EXPORT_FILENAME,
+                       include_raw=include_raw)
+
+
+def run(config: SPODConfig, output_dir: Path | None = None,
+        export: bool = True, export_raw: bool = True) -> SPODAnalysisResult:
+    """Analyse a case, print and save the summary, write figures and export.
+
+    ``export`` saves result and config to ``spod_results.npz``
+    (:func:`write_results`); ``export_raw=False`` omits the raw force field
+    from it.
+    """
     output_dir = Path(output_dir or config.default_output_dir)
     result = analyse(config)
     log_summary(result, config)
@@ -235,4 +253,7 @@ def run(config: SPODConfig, output_dir: Path | None = None
     write_figures(result, config, output_dir)
     logger.info("\nSummary written to: %s", summary_path.resolve())
     logger.info("Figures written to: %s", output_dir.resolve())
+    if export:
+        path = write_results(result, config, output_dir, export_raw)
+        logger.info("Results exported to: %s", path.resolve())
     return result

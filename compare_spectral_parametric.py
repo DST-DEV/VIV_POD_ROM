@@ -11,6 +11,7 @@ from viv_rom.spectral.config import SpectralConfig
 from viv_rom.spectral.pipeline import analyse
 from viv_rom.spectral.forcing_response import ForcingResponse
 from viv_rom.domain.blade import BladeGeometry
+from viv_rom.io.results.export import load_result
 
 
 class AbcissaType(Enum):
@@ -28,12 +29,16 @@ class CharacteristicLength(Enum):
 # User configuration
 # =============================================================================
 DATA_DIR = Path("./data/archive_1D")  # folder containing the *.1HY files
+LOAD_RES = True  # Whether to load results from previous analysis (if
+# False, the spectral analysis is rerun for all wind speeds)
+
 PITCH = 85
 INCLINATION = 50
 AMPLITUDE = 1  # Forced motion amplitude factor
 WIND_SPEEDS = list(range(6, 23))  # free-stream wind speed [m/s] to analyse (6-22)
 FIELD = "both"
 FRAME = "motion"
+
 R_ROOT = 2.8  # [m] Blade root diameter
 F_FORCING = .624  # [Hz] Forcing frequency (= first edgewise natural frequency)
 
@@ -51,14 +56,23 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # Run spectral analysis
 # =============================================================================
 
+configs = {}
 results = {}
 for wind_speed in WIND_SPEEDS:
-    config = SpectralConfig(amplitude=AMPLITUDE, pitch=PITCH,
-                            inclination=INCLINATION, wind_speed=wind_speed,
-                            data_dir=DATA_DIR, field=FIELD,
-                            frame=FRAME, unwrap_phase=UNWRAP_PHASE)
+    if LOAD_RES:
+        res_path = Path("./results") / case / f"u{wind_speed:02d}" \
+            / "spectral" / "spectral_results.npz"
+        res = load_result(res_path)
+        configs[wind_speed] = res.config
+        results[wind_speed] = res.result
+        config = res.config
+    else:
+        config = SpectralConfig(amplitude=AMPLITUDE, pitch=PITCH,
+                                inclination=INCLINATION, wind_speed=wind_speed,
+                                data_dir=DATA_DIR, field=FIELD,
+                                frame=FRAME, unwrap_phase=UNWRAP_PHASE)
 
-    results[wind_speed] = analyse(config)
+        results[wind_speed] = analyse(config)
 
 span_pos = results[wind_speed].y
 # span_pos = np.linspace(0, 96, 100)

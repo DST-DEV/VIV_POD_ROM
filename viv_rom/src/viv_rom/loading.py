@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from viv_rom.config import CaseConfig
 from viv_rom.domain.data import ForceFieldFile
-from viv_rom.io.cfd_reader import HyReader
+from viv_rom.io.cfd.cfd_reader import HyReader
 
 
 def load_case(config: CaseConfig, wind_speed: int | None = None

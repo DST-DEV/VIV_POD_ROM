@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+from functools import partial
 
-from viv_rom.cli_common import (add_case_arguments, case_kwargs,
+from viv_rom.cli_common import (add_case_arguments, add_export_arguments,
+                                case_kwargs, export_kwargs,
                                 run_over_wind_speeds, setup_runtime)
 from viv_rom.pod.normalization import available_normalizers
 from viv_rom.spod.config import SPODConfig
@@ -14,6 +16,7 @@ from viv_rom.spod.weights import available_inner_products
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     d = SPODConfig()
     add_case_arguments(parser)
+    add_export_arguments(parser)
     parser.add_argument("--field", choices=("fx", "fz", "combined"),
                         default=d.field, help="force component(s) for SPOD")
     parser.add_argument("--weighting", choices=available_inner_products(),
@@ -94,7 +97,8 @@ def build_config(args: argparse.Namespace) -> SPODConfig:
 def run_from_args(args: argparse.Namespace) -> int:
     setup_runtime()
     from viv_rom.spod.pipeline import run  # heavy import, deferred
-    return run_over_wind_speeds(args, build_config, run)
+    return run_over_wind_speeds(args, build_config,
+                                partial(run, **export_kwargs(args)))
 
 
 def main(argv: list[str] | None = None) -> int:

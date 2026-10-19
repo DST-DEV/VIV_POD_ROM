@@ -51,6 +51,25 @@ def add_case_arguments(parser: argparse.ArgumentParser) -> None:
                        help="wind-speed increment [m/s] (default: 1)")
 
 
+def add_export_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the options controlling the export of the result to a file."""
+    group = parser.add_argument_group(
+        "result export",
+        "Result and config are saved to <method>_results.npz in the output "
+        "folder (reload with viv_rom.export.load_result).")
+    group.add_argument("--no-export", action="store_true",
+                       help="do not save the results to a file")
+    group.add_argument("--no-export-raw", action="store_true",
+                       help="leave the raw force fields out of the export "
+                            "(much smaller file)")
+
+
+def export_kwargs(args: argparse.Namespace) -> dict:
+    """Keyword arguments for a pipeline's ``run`` from the export options."""
+    return {"export": not getattr(args, "no_export", False),
+            "export_raw": not getattr(args, "no_export_raw", False)}
+
+
 def case_kwargs(args: argparse.Namespace) -> dict:
     """:class:`CaseConfig` keyword arguments from parsed CLI arguments."""
     return {**parse_case(args.case), "data_dir": args.data_dir,

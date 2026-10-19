@@ -12,6 +12,7 @@ from viv_rom.pod.pipeline import analyse, PODAnalysisResult
 from viv_rom.signal_utils import dominant_frequency
 from viv_rom.pod.power import PowerCheck
 from viv_rom.domain.blade import BladeGeometry
+from viv_rom.io.results.export import load_result
 
 
 class AbcissaType(Enum):
@@ -29,17 +30,21 @@ class CharacteristicLength(Enum):
 # User configuration
 # =============================================================================
 DATA_DIR = Path("./data/archive_1D")  # folder containing the *.1HY files
-# CASE = "a01_p60_i50"  # amplitude/pitch/inclination code, see README
+LOAD_RES = True  # Whether to load results from previous analysis (if
+# False, the pod is rerun for all wind speeds)
+
 PITCH = 85
 INCLINATION = 50
 AMPLITUDE = 1  # Forced motion amplitude factor
 WIND_SPEEDS = list(range(6, 23))  # free-stream wind speed [m/s] to analyse (6-22)
 FIELD = "combined"
-normalizer = "dynamic_pressure"
+NORMALIZER = "dynamic_pressure"
+
 R_ROOT = 2.8  # [m] Blade root diameter
 F_FORCING = .624  # [Hz] Forcing frequency (= first edgewise natural frequency)
 
-ABSCISSA_COORD = AbcissaType.SPAN_POS
+ABSCISSA_COORD = AbcissaType.RED_VEL
+RED_VEL_AXIS_MAX = 50  # Upper axis limit for reduced velocity abscissa
 CHAR_LENGTH = CharacteristicLength.PROJECTED_CHORD
 CMAP = "magma"
 
@@ -51,13 +56,23 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # =============================================================================
 # Calculate POD
 # =============================================================================
+configs = {}
 results = {}
 for wind_speed in WIND_SPEEDS:
-    config = PODConfig(amplitude=AMPLITUDE, pitch=PITCH,
-                       inclination=INCLINATION, wind_speed=wind_speed,
-                       data_dir=DATA_DIR, field=FIELD,
-                       normalization=normalizer)
-    results[wind_speed] = analyse(config)
+    if LOAD_RES:
+        res_path = Path("./results") / case / f"u{wind_speed:02d}" \
+            / "pod" / "pod_results.npz"
+        res = load_result(res_path)
+        configs[wind_speed] = res.config
+        results[wind_speed] = res.result
+        config = res.config
+    else:
+        config = PODConfig(amplitude=AMPLITUDE, pitch=PITCH,
+                           inclination=INCLINATION, wind_speed=wind_speed,
+                           data_dir=DATA_DIR, field=FIELD,
+                           normalization=NORMALIZER)
+        configs[wind_speed] = config
+        results[wind_speed] = analyse(config)
 
 
 span_pos = results[wind_speed].y
@@ -162,7 +177,7 @@ def plot_temporal_coefficients_overlayed(
 
 
 fig_time_coeffs = plot_temporal_coefficients_overlayed(
-    results, f_forcing=config.f_forcing)
+    results, f_forcing=configs[WIND_SPEEDS[0]].f_forcing)
 fig_time_coeffs_name = "temporal_coefficients"
 fig_time_coeffs.savefig(OUTPUT_DIR / (fig_time_coeffs_name + ".png"), dpi=150)
 fig_time_coeffs.savefig(OUTPUT_DIR / (fig_time_coeffs_name + ".svg"))
@@ -189,6 +204,8 @@ def plot_sectional_energy_overlayed(abscissa: np.ndarray,
         ax.plot(abscissa_i, pwr.sectional_energy[span_mask]/factor,
                 c=colors[i], label=param, zorder=1)
     ax.set_xlabel(ABSCISSA_COORD.value)
+    if ABSCISSA_COORD is AbcissaType.RED_VEL:
+        ax.set_xlim([0, RED_VEL_AXIS_MAX])
     ax.set_ylabel("Sectional energy injection [J/m]")
     ax.set_title("Sectional aerodynamic energy injection")
     ax.grid(alpha=.8, zorder=0)
@@ -235,6 +252,9 @@ def plot_sectional_energy_pcolormesh(
     fig, ax = plt.subplots(figsize=(7, 4))
 
     pcm = ax.pcolormesh(X, Y, Z, shading="auto", cmap=CMAP)
+
+    if ABSCISSA_COORD is AbcissaType.RED_VEL:
+        ax.set_xlim([0, RED_VEL_AXIS_MAX])
 
     cbar = fig.colorbar(pcm, ax=ax)
     cbar.set_label("Sectional energy injection [J/m]")
