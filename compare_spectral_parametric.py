@@ -10,6 +10,7 @@ from matplotlib.figure import Figure
 from viv_rom.spectral.config import SpectralConfig
 from viv_rom.spectral.pipeline import analyse
 from viv_rom.spectral.forcing_response import ForcingResponse
+from viv_rom.spectral.shedding import SheddingFrequencies
 from viv_rom.domain.blade import BladeGeometry
 from viv_rom.io.results.export import load_result
 
@@ -23,6 +24,12 @@ class AbcissaType(Enum):
 class CharacteristicLength(Enum):
     CHORD = "chord length"
     PROJECTED_CHORD = "Chord projected with pitch and twist angle"
+
+
+class SheddingPlotMode(Enum):
+    MEAN_RATIO = "mean f_vs/f_n"
+    MEAN_REL_DIFF = "mean abs(f_vs-f_n)/f_n"
+    POT_LOCK_IN = "Potential lock in region"
 
 
 # =============================================================================
@@ -45,7 +52,9 @@ F_FORCING = .624  # [Hz] Forcing frequency (= first edgewise natural frequency)
 NORMALIZE_WIND_SPEED = True
 UNWRAP_PHASE = False
 ABSCISSA_COORD = AbcissaType.SPAN_POS
+RED_VEL_AXIS_MAX = 50  # Upper axis limit for reduced velocity abscissa
 CHAR_LENGTH = CharacteristicLength.PROJECTED_CHORD
+SHEDDING_PLOT_MODE = SheddingPlotMode.MEAN_REL_DIFF
 CMAP = "magma"
 
 case = f"a{AMPLITUDE:02d}_p{PITCH:02d}_i{INCLINATION:02d}"
@@ -186,7 +195,8 @@ def plot_forcing_response(
     y_unit1 = "N/m" if not NORMALIZE_WIND_SPEED else "N/m * (m/s)^-2"
     ax1.set_ylabel("Amplitude [" + y_unit1 + "]")
     ax1.set_title(f"Amplitude at {harmonic} × f_forcing ({f_h:.3g} Hz)")
-    # ax1.set_xlim([0, min(np.max(abscissa), 100)])
+    if ABSCISSA_COORD is AbcissaType.RED_VEL:
+        ax1.set_xlim([0, RED_VEL_AXIS_MAX])
     ax1.grid(alpha=0.8)
 
     if not UNWRAP_PHASE:
@@ -215,6 +225,9 @@ def plot_forcing_response(
         ax2.set_yticks(np.arange(y_min_360, y_max_360, 360))
         ax2.set_yticks(np.arange(y_min_90, y_max_90, 90), minor=True)
         ax2.set_ylim(y_min_90, y_max_90)
+
+    if ABSCISSA_COORD is AbcissaType.RED_VEL:
+        ax2.set_xlim([0, RED_VEL_AXIS_MAX])
 
     ax2.set_xlabel(ABSCISSA_COORD.value)
     ax2.set_ylabel("Phase lead vs. displacement [deg]")
@@ -249,6 +262,158 @@ fig_force_response.savefig(OUTPUT_DIR / "spectral"
                            dpi=150)
 fig_force_response.savefig(OUTPUT_DIR / "spectral"
                            / (fig_force_response_name + ".svg"))
+
+
+# =============================================================================
+# Shedding frequency plot
+# =============================================================================
+
+def plot_shedding_frequency(sheddings: dict[int, SheddingFrequencies],
+                            f_max_factor: float = 3.0) -> Figure:
+    """Shedding-frequency band along the span against the lock-in range.
+    """
+    wind_speeds = list(sheddings.keys())
+    f_n = sheddings[wind_speeds[0]].f_forcing
+    f_top = f_max_factor * f_n
+
+    norm = mpl.colors.Normalize(vmin=np.min(wind_speeds),
+                                vmax=np.max(wind_speeds))
+    cmap = mpl.colormaps[CMAP]
+
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    for i, (wind_speed, shedding) in enumerate(sheddings.items()):
+        lock_lo, lock_hi = shedding.lock_in_frequencies
+        color = cmap(norm(wind_speed))
+
+        if isinstance(abscissa, list):
+            abscissa_i = abscissa[i]
+        else:
+            abscissa_i = abscissa
+
+        # ax.fill_between(s.y, 0, f_top, where=s.possible_lock_in,
+        #                 step="mid", color="0.5", alpha=0.15, lw=0,
+        #                 label="shedding band overlaps lock-in range")
+        ax.fill_between(abscissa_i, shedding.f_low, shedding.f_high,
+                        color=color, alpha=0.35, lw=0)
+        ax.plot(abscissa_i, shedding.f_low, color=color, lw=1.2,
+                label=f"St = {shedding.strouhal[0]:g}" if i == 0 else "")
+        ax.plot(abscissa_i, shedding.f_high, color=color, lw=1.2, ls="--",
+                label=f"St = {shedding.strouhal[1]:g}" if i == 0 else "")
+
+    ax.axhspan(lock_lo, lock_hi, color="C1", alpha=0.25, lw=0,
+               label=f"lock-in range ({shedding.lock_in_band[0]:g}-"
+               f"{shedding.lock_in_band[1]:g} $f_n$)",
+               zorder=1)
+    ax.axhline(f_n, color="k", ls="--", lw=1.2,
+               label=f"natural / forcing frequency ({f_n:.3g} Hz)",
+               zorder=2)
+
+    if ABSCISSA_COORD is AbcissaType.RED_VEL:
+        ax.set_xlim([0, RED_VEL_AXIS_MAX])
+    ax.set_ylim(0, f_top)
+    ax.set_xlabel(ABSCISSA_COORD.value)
+    ax.set_ylabel("frequency [Hz]")
+    ax.set_title("Estimated vortex-shedding frequency")
+    ax.secondary_yaxis("right", functions=(lambda f: f / f_n,
+                                           lambda r: r * f_n)
+                       ).set_ylabel("$f / f_n$")
+    ax.legend(fontsize=7, loc="upper left")
+
+    # Colorbar
+    sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+    sm.set_array([])
+
+    cbar = fig.colorbar(sm, ax=ax, pad=0.02)
+    cbar.set_label("Wind speed [m/s]")
+
+    fig.tight_layout()
+    return fig
+
+
+sheddings = {ws: res.shedding for ws, res in results.items()}
+fig_shedding = plot_shedding_frequency(sheddings=sheddings)
+
+fig_shedding_name = "shedding_frequency_" + ABSCISSA_COORD.name.lower()
+
+fig_shedding.savefig(OUTPUT_DIR / "spectral" / (fig_shedding_name + ".png"),
+                     dpi=150)
+fig_shedding.savefig(OUTPUT_DIR / "spectral" / (fig_shedding_name + ".svg"))
+
+
+def plot_shedding_frequency_mesh(sheddings: dict[int, SheddingFrequencies],
+                                 f_max_factor: float = 3.0) -> Figure:
+    """Shedding-frequency band along the span against the lock-in range.
+    """
+    wind_speeds = np.array(list(sheddings.keys()))
+
+    if SHEDDING_PLOT_MODE is SheddingPlotMode.MEAN_RATIO:
+        Z = []
+        for shedding in sheddings.values():
+            Z.append(np.mean(
+                np.stack([shedding.ratio_low, shedding.ratio_high], axis=0),
+                axis=0))
+        Z = np.clip(np.asarray(Z), None, f_max_factor
+                    )  # shape = (n_wind, n_sections)
+    elif SHEDDING_PLOT_MODE is SheddingPlotMode.MEAN_REL_DIFF:
+        f_n = sheddings[wind_speeds[0]].f_forcing
+        mean_shed_freq = []
+        for shedding in sheddings.values():
+            mean_shed_freq.append(np.mean(
+                np.stack([shedding.f_low, shedding.f_high], axis=0),
+                axis=0))
+        Z = np.abs(np.asarray(mean_shed_freq) - f_n) / f_n
+        Z = np.clip(np.asarray(Z), None, f_max_factor
+                    )  # shape = (n_wind, n_sections)
+    elif SHEDDING_PLOT_MODE is SheddingPlotMode.POT_LOCK_IN:
+        Z = np.zeros(len(sheddings),
+                     len(sheddings[wind_speeds[0]].f_low)
+                     )  # shape = (n_wind, n_sections)
+        for i, shedding in sheddings.values():
+            Z[i, shedding.possible_lock_in] = 1
+    else:
+        raise ValueError("Invalid shedding frequency plot mode "
+                         f"{SHEDDING_PLOT_MODE}")
+
+    # Coordinate arrays
+    if isinstance(abscissa, list):
+        # Reduced velocity case: x changes with wind speed
+        X = np.asarray(abscissa)
+    else:
+        # Span position or chord
+        X = np.tile(abscissa, (len(wind_speeds), 1))
+
+    Y = np.tile(wind_speeds[:, None], (1, X.shape[1]))
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+
+    fcm = ax.pcolormesh(X, Y, Z, shading="auto", cmap=CMAP)
+    # ax.plot(lock_in_mean, wind_speeds, ls="-", c="k",
+    #         label="Mean of lock-in range")
+
+    if ABSCISSA_COORD is AbcissaType.RED_VEL:
+        ax.set_xlim([0, RED_VEL_AXIS_MAX])
+
+    cbar = fig.colorbar(fcm, ax=ax)
+    cbar.set_label(SHEDDING_PLOT_MODE.value)
+
+    ax.set_xlabel(ABSCISSA_COORD.value)
+    ax.set_ylabel("Wind speed [m/s]")
+    ax.set_title("Lock-in region estimate")
+
+    fig.tight_layout()
+    return fig
+
+
+fig_shedding_mesh = plot_shedding_frequency_mesh(sheddings=sheddings)
+
+fig_shedding_mesh_name = "shedding_frequency_mesh_" \
+    + ABSCISSA_COORD.name.lower()
+
+fig_shedding_mesh.savefig(OUTPUT_DIR / "spectral"
+                          / (fig_shedding_mesh_name + ".png"),
+                          dpi=150)
+fig_shedding_mesh.savefig(OUTPUT_DIR / "spectral"
+                          / (fig_shedding_mesh_name + ".svg"))
 
 # =============================================================================
 # Additional plots
