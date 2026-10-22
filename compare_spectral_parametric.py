@@ -6,12 +6,14 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
+from intersect import intersection
 
 from viv_rom.spectral.config import SpectralConfig
 from viv_rom.spectral.pipeline import analyse
 from viv_rom.spectral.forcing_response import ForcingResponse
 from viv_rom.spectral.shedding import SheddingFrequencies
 from viv_rom.domain.blade import BladeGeometry
+from viv_rom.domain.inflow import InflowConvention
 from viv_rom.io.results.export import load_result
 
 
@@ -105,12 +107,17 @@ elif ABSCISSA_COORD is AbcissaType.RED_VEL:
     if CHAR_LENGTH == CharacteristicLength.CHORD:
         char_length = chord
     elif CHAR_LENGTH == CharacteristicLength.PROJECTED_CHORD:
-        # Calculate local chord angle (assumption: twist and pitch defined
-        # relative to blade tip)
-        twist = blade.twist_at(span_pos)
-        local_angle = np.deg2rad(90 - PITCH) - twist
+        inflow = InflowConvention()
 
-        char_length = chord * np.cos(local_angle)
+        # Calculate local chord angle
+        # Note: twist is currently arbitrarily defined (directly read from the
+        # windIO file)
+        twist = blade.twist_at(span_pos)
+        angle_of_attack = inflow.angle_of_attack(pitch_deg=PITCH,
+                                                 twist_rad=twist)
+        # local_angle = np.deg2rad(PITCH) - twist  # This is essentially what the InflowConvention defines
+
+        char_length = chord * np.sin(angle_of_attack)
     else:
         raise ValueError("Invalid characteristic length selection "
                          f"{CHAR_LENGTH}")
@@ -346,6 +353,16 @@ def plot_shedding_frequency_mesh(sheddings: dict[int, SheddingFrequencies],
     """
     wind_speeds = np.array(list(sheddings.keys()))
 
+    # Coordinate arrays
+    if isinstance(abscissa, list):
+        # Reduced velocity case: x changes with wind speed
+        X = np.asarray(abscissa)
+    else:
+        # Span position or chord
+        X = np.tile(abscissa, (len(wind_speeds), 1))
+
+    Y = np.tile(wind_speeds[:, None], (1, X.shape[1]))
+
     if SHEDDING_PLOT_MODE is SheddingPlotMode.MEAN_RATIO:
         Z = []
         for shedding in sheddings.values():
@@ -364,6 +381,17 @@ def plot_shedding_frequency_mesh(sheddings: dict[int, SheddingFrequencies],
         Z = np.abs(np.asarray(mean_shed_freq) - f_n) / f_n
         Z = np.clip(np.asarray(Z), None, f_max_factor
                     )  # shape = (n_wind, n_sections)
+
+        # Calculate position of lock-in at f_n and harmonics
+        span_lock_1, span_lock_2 = [], []
+        for i in range(len(wind_speeds)):
+            inter_1 = intersection(X[i, :], Z[i, :],
+                                   X[i, :], np.full_like(X[i, :], 0.05))
+            span_lock_1.append(inter_1[0][-1] if len(inter_1[0])>0 else np.nan)
+
+            inter_2 = intersection(X[i, :], Z[i, :],
+                                   X[i, :], np.full_like(X[i, :], 1.0))
+            span_lock_2.append(inter_2[0][-1] if len(inter_2[0])>0 else np.nan)
     elif SHEDDING_PLOT_MODE is SheddingPlotMode.POT_LOCK_IN:
         Z = np.zeros(len(sheddings),
                      len(sheddings[wind_speeds[0]].f_low)
@@ -374,21 +402,17 @@ def plot_shedding_frequency_mesh(sheddings: dict[int, SheddingFrequencies],
         raise ValueError("Invalid shedding frequency plot mode "
                          f"{SHEDDING_PLOT_MODE}")
 
-    # Coordinate arrays
-    if isinstance(abscissa, list):
-        # Reduced velocity case: x changes with wind speed
-        X = np.asarray(abscissa)
-    else:
-        # Span position or chord
-        X = np.tile(abscissa, (len(wind_speeds), 1))
-
-    Y = np.tile(wind_speeds[:, None], (1, X.shape[1]))
-
     fig, ax = plt.subplots(figsize=(7, 4))
 
     fcm = ax.pcolormesh(X, Y, Z, shading="auto", cmap=CMAP)
-    # ax.plot(lock_in_mean, wind_speeds, ls="-", c="k",
-    #         label="Mean of lock-in range")
+
+    # Plot lock in curve
+    if SHEDDING_PLOT_MODE is SheddingPlotMode.MEAN_REL_DIFF:
+        cmap_inv = mpl.colormaps[CMAP + "_r"]
+        norm = mpl.colors.Normalize(vmin=np.nanmin(Z),
+                                    vmax=np.nanmax(Z))
+        ax.plot(span_lock_1, wind_speeds, ls="--", lw=1, c=cmap_inv(norm(0.0)))
+        ax.plot(span_lock_2, wind_speeds, ls="--", lw=1, c=cmap_inv(norm(1.0)))
 
     if ABSCISSA_COORD is AbcissaType.RED_VEL:
         ax.set_xlim([0, RED_VEL_AXIS_MAX])

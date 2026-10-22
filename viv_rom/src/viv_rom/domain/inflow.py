@@ -60,9 +60,8 @@ class InflowConvention:
     Attributes
     ----------
     flow_angle_at_zero_pitch_deg : float
-        Direction of the free stream in the ``(x, z)`` plane at zero pitch
-        [deg from ``+x`` towards ``+z``]. 0 (default): air moves along
-        ``+x`` (= ``+x_0``).
+        Direction of the free stream in the ``(x0, z0)`` plane at zero pitch
+        . 0 (default): air moves along ``+x0`` (= ``+x0``).
     pitch_sign : float
         ``+1`` or ``-1``: sign with which the pitch angle adds to the flow
         angle. +1 (default): the root frame turns clockwise with the pitch.
@@ -71,8 +70,8 @@ class InflowConvention:
         chord angle. -1 (default): counter-clockwise.
     chord_angle_at_zero_twist_deg : float
         Direction of the chord line (leading to trailing edge) at zero
-        twist in the blade root coordinate system [deg from ``+x`` towards
-        ``+z``]. 0 (default): along ``+x``.
+        twist in the blade root coordinate system [deg from ``+xr`` towards
+        ``+zr``]. 0 (default): along ``+xr``.
     """
     flow_angle_at_zero_pitch_deg: float = 0.0
     pitch_sign: float = 1.0
@@ -84,18 +83,71 @@ class InflowConvention:
             raise ValueError("pitch_sign and twist_sign must be +1 or -1.")
 
     def flow_angle(self, pitch_deg: float) -> float:
-        """Free-stream direction in the root ``(x, z)`` plane [rad]."""
+        """Calculate root direction in the free stream plane [rad].
+
+            Parameters
+            ----------
+            pitch_deg : _type_
+                Pitch angle in degrees (= Angle from the inflow coordinate
+                system to the root coordinate system.
+                See :attr:`InflowConvention.pitch_sign` for definition of
+                the direction)
+
+            Returns
+            -------
+            np.ndarray
+                Angle from the inflow coordinate system to the the root
+                coordinate system system in radians (positive values consitute
+                clockwise rotation)
+        """
         return float(wrap_angle(np.deg2rad(
             self.flow_angle_at_zero_pitch_deg
             + self.pitch_sign * pitch_deg)))
 
     def chord_angle(self, twist_rad):
-        """Chord direction in the root ``(x, z)`` plane [rad]."""
+        """Calculate chord direction in the root ``(x, z)`` plane [rad].
+
+        Parameters
+        ----------
+        twist_rad : _type_
+            Twist angle in radians (= Angle from the root coordinate system
+            to the chord coordinate system.
+            See :attr:`InflowConvention.twist_sign` for definition of the
+            direction)
+
+        Returns
+        -------
+        np.ndarray
+            Angle from the root coordinate system to the chord coordinate
+            system in radians (positive values consitute clockwise rotation)
+        """
         return (np.deg2rad(self.chord_angle_at_zero_twist_deg)
                 + self.twist_sign * np.asarray(twist_rad, float))
 
     def angle_of_attack(self, pitch_deg: float, twist_rad):
-        """Angle from the chord to the flow [rad], in ``(-pi, pi]``."""
+        """Calculate angle from the flow to the chord [rad], in ``(-pi, pi]``.
+
+            Parameters
+            ----------
+            pitch_deg : _type_
+                Pitch angle in degrees (= Angle from the inflow coordinate
+                system to the root coordinate system.
+                See :attr:`InflowConvention.pitch_sign` for definition of
+                the direction)
+            twist_rad : _type_
+                Twist angle in radians (= Angle from the root coordinate system
+                to the chord coordinate system.
+                See :attr:`InflowConvention.twist_sign` for definition of the
+                direction)
+
+            Returns
+            -------
+            np.ndarray
+                Angle from the inflow coordinate system to the the chord
+                coordinate system in radians (positive values consitute
+                clockwise rotation)
+        """
+        """"""
         return wrap_angle(self.flow_angle(pitch_deg)
                           + self.chord_angle(twist_rad))
 

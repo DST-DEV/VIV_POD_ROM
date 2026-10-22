@@ -180,16 +180,16 @@ class InflowAlignedFrame:
         """Free-stream direction in the (x, z) plane [rad from +x to +z]."""
         return self.convention.flow_angle(self.pitch)
 
-    def direction(self, y) -> tuple[float, float]:
+    def direction(self) -> tuple[float, float]:
         """Unit vector ``(d_x, d_z)`` of the free stream."""
-        beta = self.convention.twist_sign * self.geometry.twist_at(y)
-        return float(np.cos(beta)), float(np.sin(beta))
+        theta = self.convention.flow_angle(self.pitch)
+        return float(np.cos(theta)), float(np.sin(theta))
 
     def transform(self, y, Fx, Fz):
-        dx, dz = self.direction(y)
+        dx, dz = self.direction()
         dx, dz = dx[:, None], dz[:, None]
         return {"fdrag": Fx * dx - Fz * dz,
-                "flift": Fx * dz + Fz * dx}
+                "flift": -Fx * dz - Fz * dx}
 
     # Local flow quantities
     @property
@@ -220,12 +220,12 @@ class InflowAlignedFrame:
         """Wind speed along the blade axis, ``U sin(inclination)``."""
         return wind_speed * spanwise_speed_factor(self.inclination)
 
-    # def describe(self) -> str:
-    #     """One-line description for logs and summaries."""
-    #     dx, dz = self.direction
-    #     return (f"flow direction {np.degrees(self.flow_angle):.1f} deg from "
-    #             f"+x towards +z (d = [{dx:.3f}, {dz:.3f}]), pitch "
-    #             f"{self.pitch:g} deg, inclination {self.inclination:g} deg")
+    def describe(self) -> str:
+        """One-line description for logs and summaries."""
+        dx, dz = self.direction
+        return (f"flow direction {np.degrees(self.flow_angle):.1f} deg "
+                f"(d = [{dx:.3f}, {dz:.3f}]), pitch "
+                f"{self.pitch:g} deg, inclination {self.inclination:g} deg")
 
 
 register_frame("blade")(lambda motion, **_: BladeFrame())
