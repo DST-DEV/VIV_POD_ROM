@@ -1,7 +1,9 @@
+from dataclasses import dataclass
 from pathlib import Path
 from enum import Enum
 
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.animation import FuncAnimation
@@ -16,135 +18,253 @@ class PlotMetric(Enum):
     POWER = "power"
 
 
+@dataclass
+class Case:
+    """One time series, fully specified by the parameters of a .1HY file."""
+    pitch: float
+    inclination: float
+    wind_speed: float  # free-stream wind speed [m/s]
+    amplitude: float = 1  # forced motion amplitude factor
+    f_forcing: float = 0.624  # [Hz]
+    label: str | None = None  # legend label (auto-generated if None)
+
+    def __post_init__(self):
+        if self.label is None:
+            self.label = (f"A={self.amplitude}, pitch={self.pitch}, "
+                          f"incl={self.inclination}, U={self.wind_speed}, "
+                          f"f={self.f_forcing}")
+
+
+# Define diverging colormap (only used if CENTER_CONTOURS_AT_ZERO = True)
+colors = [
+    "#05bdfa",  # light blue
+    "#055be4",  # vibrant blue
+    "#0c17bd",  # deep vibrant blue
+    "#200677",  # deep blue
+    "#000000",  # black at zero
+    "#7f0000",  # dark red
+    "#d94801",  # orange-red
+    "#fca50a",  # orange
+    "#fafda1",  # inferno-like yellow
+]
+
+cmap_diverging = mpl.colors.LinearSegmentedColormap.from_list(
+    "blue_black_inferno", colors, N=256)
+
 # =============================================================================
-# User config_animuration
+# User config
 # =============================================================================
 DATA_DIR = Path("./data/archive_1D")  # folder containing the *.1HY files
-PITCH = 85
-INCLINATION = 50
-WIND_SPEED = 10  # free-stream wind speed [m/s]
-AMPLITUDE = 1  # Forced motion amplitude factor
-F_FORCING = 0.624  # [Hz]
-N_SKIP = 0
+N_SKIP = 200
+
+# Add one Case per line to be shown in each axis
+CASES = [
+    Case(pitch=85, inclination=50, wind_speed=6, amplitude=1,
+         f_forcing=0.624),
+    Case(pitch=85, inclination=50, wind_speed=10, amplitude=1,
+         f_forcing=0.624),
+    Case(pitch=85, inclination=50, wind_speed=18, amplitude=1,
+         f_forcing=0.624),
+    Case(pitch=85, inclination=50, wind_speed=22, amplitude=1,
+         f_forcing=0.624),
+]
 
 ALIGN_FRAME = True
 REMOVE_MEAN = False
+NORMALIZE_ANIMATION = True
 PLOTMETRIC = PlotMetric.POWER
+PLOT_CONTOURS = True  # one contour figure (2 axes) per case
+CENTER_CONTOURS_AT_ZERO = True  # Whether to center the colormap for the contours at zero
+OUTPUT_DIR = Path(__file__).parent / "results"
+SAVE_FIGS = True
 
-# Load some data (to test)
+
+# =============================================================================
+# Data loading
+# =============================================================================
+def compute_case(reader, case):
+    """Return (data, line_data1, line_data2, label_1, label_2, unit)."""
+    data = reader.retrieve_force_field(amplitude=case.amplitude,
+                                       pitch=case.pitch,
+                                       inclination=case.inclination,
+                                       wind_speed=case.wind_speed,
+                                       n_skip=N_SKIP, n_last=None).data
+
+    if PLOTMETRIC is PlotMetric.FORCE:
+        if ALIGN_FRAME:
+            frame = MotionAlignedFrame(FIRST_EDGEWISE_MODE)
+            forces_transformed = frame.transform(data.y, data.Fx, data.Fz)
+            line_data1 = forces_transformed["fpar"]
+            line_data2 = forces_transformed["fperp"]
+
+            label_1, label_2 = frame.labels.values()
+        else:
+            line_data1, line_data2 = data.Fx, data.Fz
+            label_1, label_2 = "Fx", "Fz"
+
+        unit = "N/m"
+    elif PLOTMETRIC is PlotMetric.POWER:
+        omega = 2 * np.pi * case.f_forcing
+        vx = FIRST_EDGEWISE_MODE.velocity(component="x", y=data.y, t=data.t,
+                                          amplitude=case.amplitude,
+                                          omega=omega)
+        vz = FIRST_EDGEWISE_MODE.velocity(component="z", y=data.y, t=data.t,
+                                          amplitude=case.amplitude,
+                                          omega=omega)
+
+        if ALIGN_FRAME:
+            line_data1 = data.Fx * vx + data.Fz * vz
+            line_data2 = np.zeros_like(line_data1)
+
+            label_1, label_2 = "P∥", "P⊥"
+        else:
+            line_data1 = data.Fx * vx
+            line_data2 = data.Fz * vz
+
+            label_1, label_2 = "Px", "Pz"
+
+        unit = "W/m"
+    else:
+        raise ValueError("Invalid plot metric selected")
+
+    if REMOVE_MEAN:
+        # Not in-place, so the arrays stored in `data` are never modified
+        line_data1 = line_data1 - line_data1.mean(axis=1)[:, None]
+        line_data2 = line_data2 - line_data2.mean(axis=1)[:, None]
+
+    return data, line_data1, line_data2, label_1, label_2, unit
+
+
 reader = HyReader(DATA_DIR)
-data = reader.retrieve_force_field(amplitude=1, pitch=PITCH,
-                                   inclination=INCLINATION,
-                                   wind_speed=WIND_SPEED,
-                                   n_skip=N_SKIP, n_last=None).data
+results = [compute_case(reader, case) for case in CASES]
 
-if PLOTMETRIC is PlotMetric.FORCE:
-    if ALIGN_FRAME:
-        frame = MotionAlignedFrame(FIRST_EDGEWISE_MODE)
-        forces_transformed = frame.transform(data.y, data.Fx, data.Fz)
-        line_data1 = forces_transformed["fpar"]
-        line_data2 = forces_transformed["fperp"]
-
-        label_1, label_2 = frame.labels.values()
-    else:
-        line_data1, line_data2 = data.Fx, data.Fz
-        label_1, label_2 = "Fx", "Fz"
-
-    lines_unit = "N/m"
-elif PLOTMETRIC is PlotMetric.POWER:
-    vx = FIRST_EDGEWISE_MODE.velocity(component="x", y=data.y, t=data.t,
-                                      amplitude=AMPLITUDE,
-                                      omega=2*np.pi*F_FORCING)
-    vz = FIRST_EDGEWISE_MODE.velocity(component="z", y=data.y, t=data.t,
-                                      amplitude=AMPLITUDE,
-                                      omega=2*np.pi*F_FORCING)
-
-    if ALIGN_FRAME:
-        line_data1 = data.Fx * vx + data.Fz * vz
-        line_data2 = np.zeros_like(line_data1)
-
-        label_1, label_2 = "P∥", "P⊥"
-    else:
-        line_data1 = data.Fx * vx
-        line_data2 = data.Fz * vz
-
-        label_1, label_2 = "Px", "Pz"
-
-    lines_unit = "W/m"
-else:
-    raise ValueError("Invalid plot metric selected")
-
-if REMOVE_MEAN:
-    line_data1 -= line_data1.mean(axis=1)[:, None]
-    line_data2 -= line_data2.mean(axis=1)[:, None]
-
-# =============================================================================
-# 2D contour plot
-# =============================================================================
-fig_cont, ax_cont = plt.subplots(figsize=(16, 7),
-                                 ncols=2)
-Y, T = np.meshgrid(data.y, data.t)
-
-line_data = (line_data1, line_data2)
+# Labels/units are identical for all cases (they only depend on the metric)
+label_1, label_2, lines_unit = results[0][3:]
 labels = (label_1, label_2)
-for idx_ax, ax in enumerate(ax_cont):
-    CS = ax_cont[idx_ax].contourf(T, Y, line_data[idx_ax].T, 50,
-                                  cmap="inferno")
-    # CS2 = ax_cont[idx_ax].contour(CS, levels=CS.levels[::2], colors='r')
 
-    ax_cont[idx_ax].set_title(labels[idx_ax])
-    ax_cont[idx_ax].set_xlabel("Time [s]")
-    ax_cont[idx_ax].set_ylabel("y [m]")
+# One distinct color per case
+colors = [plt.get_cmap("tab10")(i % 10) for i in range(len(CASES))]
 
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes('right', size='5%', pad=0.05)
+# =============================================================================
+# 2D contour plots (one figure per case)
+# =============================================================================
+if PLOT_CONTOURS:
+    for case, (data, ld1, ld2, *_) in zip(CASES, results):
+        if PLOTMETRIC is PlotMetric.POWER and ALIGN_FRAME:
+            # Power perpendicular to motion is always zero => second subplot
+            # omitted
+            fig_cont, ax_cont = plt.subplots(figsize=(8, 7))
+            ax_cont = [ax_cont,]
+        else:
+            fig_cont, ax_cont = plt.subplots(figsize=(16, 7), ncols=2)
+        fig_cont.suptitle(case.label)
+        Y, T = np.meshgrid(data.y, data.t)
 
-    # Make a colorbar for the ContourSet returned by the contourf call.
-    cbar = fig_cont.colorbar(CS, cax=cax, orientation='vertical')
-    cbar.ax.set_ylabel(labels[idx_ax] + " " + lines_unit)
-    # Add the contour line levels to the colorbar
-    # cbar.add_lines(CS2)
-plt.subplots_adjust(left=0.05, right=0.95,
-                    top=0.95, bottom=0.1,
-                    wspace=0.25)
+        line_data = (ld1, ld2)
+        for idx_ax, ax in enumerate(ax_cont):
+            ax.set_title(labels[idx_ax])
+
+            Z = line_data[idx_ax].T
+            if np.nanmin(Z) == np.nanmax(Z):
+                continue
+
+            if CENTER_CONTOURS_AT_ZERO:
+                norm = mpl.colors.TwoSlopeNorm(vmin=np.nanmin(Z),
+                                               vcenter=0,
+                                               vmax=np.nanmax(Z))
+                cmap_contourf = cmap_diverging
+            else:
+                norm = None
+                cmap_contourf = "inferno"
+            CS = ax.contourf(T, Y, Z, 50, cmap=cmap_contourf, norm=norm)
+
+            ax.set_xlabel("Time [s]")
+            ax.set_ylabel("y [m]")
+
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes('right', size='5%', pad=0.05)
+
+            cbar = fig_cont.colorbar(CS, cax=cax, orientation='vertical')
+            cbar.ax.set_ylabel(labels[idx_ax] + " " + lines_unit)
+
+        if len(ax_cont) == 1:
+            fig_cont.subplots_adjust(left=0.1, right=0.9,
+                                     top=0.92, bottom=0.1,
+                                     wspace=0.25)
+        else:
+            fig_cont.subplots_adjust(left=0.05, right=0.95,
+                                     top=0.92, bottom=0.1,
+                                     wspace=0.25)
+
+        if SAVE_FIGS:
+            case_dir = OUTPUT_DIR / (f"a{case.amplitude:02d}"
+                                     + f"_p{case.pitch:02d}"
+                                     + f"_i{case.inclination:02d}") \
+                                     / f"u{case.wind_speed:02d}" / "data"
+            case_dir.mkdir(exist_ok=True)
+            fig_cont_name = "Hovmoller_" + PLOTMETRIC.value
+            fig_cont.savefig(case_dir / (fig_cont_name + ".png"), dpi=150)
+            fig_cont.savefig(case_dir / (fig_cont_name + ".svg"))
 
 # =============================================================================
 # Animation
 # =============================================================================
 fig_anim, (ax1_anim, ax2_anim) = plt.subplots(figsize=(10, 8), nrows=2)
 
-lline_1, = ax1_anim.plot([], [], 'k')
-lline_2, = ax2_anim.plot([], [], 'k')
+if NORMALIZE_ANIMATION:
+    norm_factors_1 = [np.abs(r[1]).max() or 1 for r in results]
+    norm_factors_2 = [np.abs(r[2]).max() or 1 for r in results]
+else:
+    norm_factors_1, norm_factors_2 = [[1.0,] * len(results)] * 2
+
+lines_1, lines_2 = [], []
+for case, color in zip(CASES, colors):
+    l1, = ax1_anim.plot([], [], color=color, label=case.label)
+    l2, = ax2_anim.plot([], [], color=color, label=case.label)
+    lines_1.append(l1)
+    lines_2.append(l2)
 
 title = ax1_anim.text(0.5, 0.85, "",
                       bbox={'facecolor': 'w', 'alpha': 0.5, 'pad': 5},
                       transform=ax1_anim.transAxes, ha="center")
 
-ax1_anim.set_xlim(0, 100)
-ax2_anim.set_xlim(0, 100)
-ax1_anim.set_ylim(line_data1.min(), line_data1.max())
-ax2_anim.set_ylim(line_data2.min(), line_data2.max())
-ax1_anim.set_xlabel('y [m]')
-ax2_anim.set_xlabel('y [m]')
-ax1_anim.set_ylabel(label_1 + " [N/m]")
-ax2_anim.set_ylabel(label_2 + " [N/m]")
-ax1_anim.grid(True)
-ax2_anim.grid(True)
+# Axis limits cover all cases
+span_min = min(r[0].y.min() for r in results)
+span_max = max(r[0].y.max() for r in results)
+for ax, idx, norm in ((ax1_anim, 1, norm_factors_1),
+                      (ax2_anim, 2, norm_factors_2)):
+    lo = min(r[idx].min()/n for r, n in zip(results, norm))
+    hi = max(r[idx].max()/n for r, n in zip(results, norm))
+    if lo == hi:  # e.g. the all-zero P⊥ line: avoid a degenerate axis
+        lo, hi = lo - 1, hi + 1
+    ax.set_xlim(span_min, span_max)
+    ax.set_ylim(lo, hi)
+    ax.set_xlabel('y [m]')
+    ax.grid(True)
+ax1_anim.set_ylabel(f"{label_1} [{lines_unit}]")
+ax2_anim.set_ylabel(f"{label_2} [{lines_unit}]")
+ax1_anim.legend(loc="upper right", fontsize="small")
+
+# In case the number of time steps doesn't match: animate up to the shortest
+n_frames = min(len(r[0].t) for r in results)
 
 
 def update(frame):
-    lline_1.set_data(data.y, line_data1[:, frame])
-    lline_2.set_data(data.y, line_data2[:, frame])
+    for idx, (res, l1, l2) in enumerate(zip(results, lines_1, lines_2)):
+        data, ld1, ld2 = res[:3]
+        l1.set_data(data.y, ld1[:, frame]/norm_factors_1[idx])
+        l2.set_data(data.y, ld2[:, frame]/norm_factors_2[idx])
 
-    title.set_text(f"t = {data.t[frame]:.2f} s")
+    # Time of the first case is shown (cases are stepped frame by frame)
+    title.set_text(f"t = {results[0][0].t[frame]:.2f} s")
 
-    return lline_1, lline_2, title
+    return (*lines_1, *lines_2, title)
 
 
 ani = FuncAnimation(
     fig_anim,
     update,
-    frames=len(data.t),
+    frames=n_frames,
     interval=10,
     blit=True
 )
