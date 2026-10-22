@@ -48,6 +48,8 @@ class SpectralConfig(CaseConfig):
         Welch segment length. ``None`` uses the full record (single windowed
         periodogram), which keeps the frequency resolution needed to tell
         nearby frequencies apart on these short records.
+    noverlap : int or None
+        Welch segment overlap length. ``None`` uses nperseg // 2.
     spectrogram_nperseg : int or None
         STFT segment length. ``None`` -> ``max(64, n_steps // 12)``.
     do_spanwise_map, do_spanwise_amplitude_map, do_spanwise_phase_map : bool
@@ -90,6 +92,7 @@ class SpectralConfig(CaseConfig):
     stations: tuple[int, ...] = (0, 25, 50, 75, 100)
     n_harmonics: int = 6
     nperseg: int | None = None
+    noverlap: int | None = None
     spectrogram_nperseg: int | None = None
     do_spanwise_map: bool = True
     do_spanwise_amplitude_map: bool = True

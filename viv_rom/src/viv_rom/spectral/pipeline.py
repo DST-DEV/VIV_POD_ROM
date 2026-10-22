@@ -130,7 +130,9 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
     for key, data in components.items():
         peaks = []
         for st in station_idxs:
-            freqs, psd = compute_psd(data[st, :], dt, config.nperseg)
+            freqs, psd = compute_psd(data[st, :], dt=dt,
+                                     nperseg=config.nperseg,
+                                     noverlap=config.noverlap)
             peaks.append(dominant_peaks(freqs, psd, n_peaks=1)[0][0])
         station_peaks[key] = np.array(peaks)
 
@@ -270,15 +272,20 @@ def write_figures(result: SpectralAnalysisResult, config: SpectralConfig,
 
     figures = {"01_station_psd": plotting.plot_station_psd(
         y, t, components, result.station_idxs, nperseg=config.nperseg,
-        **common)}
+        noverlap=config.noverlap, **common)}
 
     if config.do_spanwise_map:
         figures["02_spanwise_psd_map"] = plotting.plot_spanwise_map(
-            y, t, components, nperseg=config.nperseg, **common)
+            y, t, components,
+            nperseg=config.nperseg, noverlap=config.noverlap,
+            **common)
     if config.do_spanwise_amplitude_map:
         figures["03_spanwise_amplitude_map"] = (
             plotting.plot_spanwise_amplitude_map(
-                y, t, components, nperseg=config.nperseg, **common))
+                y, t, components,
+                nperseg=config.nperseg,
+                noverlap=config.noverlap,
+                **common))
     if config.do_spanwise_phase_map:
         figures["03_spanwise_phase_map"] = (
             plotting.plot_spanwise_phase_map(

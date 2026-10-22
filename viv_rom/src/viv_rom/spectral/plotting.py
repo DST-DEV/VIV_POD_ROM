@@ -36,6 +36,7 @@ def plot_station_psd(y: np.ndarray, t: np.ndarray,
                      components: Mapping[str, np.ndarray],
                      stations: Sequence[int], f_forcing: float,
                      n_harmonics: int, nperseg: int | None,
+                     noverlap: int | None,
                      labels: Mapping[str, str] | None = None) -> Figure:
     """PSD (Welch) at selected stations, one panel per force component.
 
@@ -46,7 +47,8 @@ def plot_station_psd(y: np.ndarray, t: np.ndarray,
 
     for ax, (key, data) in zip(axes, components.items()):
         for st in stations:  # Plot PSD of each station
-            freqs, psd = compute_psd(data[st, :], dt, nperseg)
+            freqs, psd = compute_psd(data[st, :], dt=dt,
+                                     nperseg=nperseg, noverlap=noverlap)
             ax.semilogy(freqs, psd, label=f"y = {y[st]:.1f} m")
         for h in range(1, n_harmonics + 1):  # Add harmonics as dashed lines
             ax.axvline(h * f_forcing, color="gray", ls="--", lw=0.8,
@@ -64,6 +66,7 @@ def plot_station_psd(y: np.ndarray, t: np.ndarray,
 def plot_spanwise_map(y: np.ndarray, t: np.ndarray,
                       components: Mapping[str, np.ndarray], f_forcing: float,
                       n_harmonics: int, nperseg: int | None,
+                      noverlap: int | None,
                       labels: Mapping[str, str] | None = None) -> Figure:
     """Frequency-vs-span heatmap of log10(PSD), one panel per component."""
     dt = t[1] - t[0]
@@ -71,7 +74,8 @@ def plot_spanwise_map(y: np.ndarray, t: np.ndarray,
     f_max = (n_harmonics + 1) * f_forcing
 
     for ax, (key, data) in zip(axes, components.items()):
-        freqs, psd_map = compute_spanwise_psd(data, dt, nperseg)
+        freqs, psd_map = compute_spanwise_psd(data, dt=dt, nperseg=nperseg,
+                                              noverlap=noverlap)
 
         # Filter for selected frequency range
         keep = freqs <= f_max
@@ -97,7 +101,7 @@ def plot_spanwise_map(y: np.ndarray, t: np.ndarray,
 def plot_spanwise_amplitude_map(y: np.ndarray, t: np.ndarray,
                                 components: Mapping[str, np.ndarray],
                                 f_forcing: float, n_harmonics: int,
-                                nperseg: int | None,
+                                nperseg: int | None, noverlap: int | None,
                                 labels: Mapping[str, str] | None = None
                                 ) -> Figure:
     """Frequency-vs-span heatmap of peak amplitude (linear, e.g. N/m).
@@ -111,7 +115,9 @@ def plot_spanwise_amplitude_map(y: np.ndarray, t: np.ndarray,
     f_max = (n_harmonics + 1) * f_forcing
 
     for ax, (key, data) in zip(axes, components.items()):
-        freqs, amp_map = compute_spanwise_amplitude(data, dt, nperseg)
+        freqs, amp_map = compute_spanwise_amplitude(data, dt=dt,
+                                                    nperseg=nperseg,
+                                                    noverlap=noverlap)
         keep = freqs <= f_max
         pcm = ax.pcolormesh(y, freqs[keep], amp_map[:, keep].T,
                             shading="auto", cmap="magma", vmin=0.0)

@@ -36,6 +36,9 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="forcing harmonics to mark")
     parser.add_argument("--nperseg", type=int, default=d.nperseg,
                         help="Welch segment length (default: full record)")
+    parser.add_argument("--noverlap", type=int, default=d.nperseg,
+                        help="Welch segment overlap length (default: half of "
+                        "nperseg)")
     parser.add_argument("--spectrogram-nperseg", type=int,
                         default=d.spectrogram_nperseg,
                         help="STFT segment length "
@@ -95,7 +98,8 @@ def build_config(args: argparse.Namespace) -> SpectralConfig:
     return SpectralConfig(
         **case_kwargs(args), frame=args.frame, field=args.field,
         stations=tuple(args.stations), n_harmonics=args.n_harmonics,
-        nperseg=args.nperseg, spectrogram_nperseg=args.spectrogram_nperseg,
+        nperseg=args.nperseg, noverlap=args.noverlap,
+        spectrogram_nperseg=args.spectrogram_nperseg,
         do_spanwise_map=not args.no_spanwise_map,
         do_spanwise_amplitude_map=not args.no_amplitude_map,
         do_spanwise_phase_map=not args.no_phase_map,

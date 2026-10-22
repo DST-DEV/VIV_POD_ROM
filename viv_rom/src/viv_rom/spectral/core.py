@@ -32,7 +32,8 @@ def _segment_length(n: int, nperseg: int | None) -> int:
     return min(seg, n)
 
 
-def compute_psd(signal: np.ndarray, dt: float, nperseg: int | None = None
+def compute_psd(signal: np.ndarray, dt: float, nperseg: int | None = None,
+                noverlap: int | None = None
                 ) -> tuple[np.ndarray, np.ndarray]:
     """Power spectral density of a single time signal via Welch's method.
 
@@ -50,17 +51,21 @@ def compute_psd(signal: np.ndarray, dt: float, nperseg: int | None = None
         from the 0.624 Hz forcing). Pass an explicit ``nperseg`` to trade
         resolution for variance reduction if the signal is noisy and long
         enough to afford it.
+    noverlap: int, optional
+        Welch segment overlap length. ``None`` uses nperseg // 2.
 
     Returns
     -------
     freqs, psd : (n_freqs,) arrays
     """
     seg = _segment_length(len(signal), nperseg)
-    return welch(signal, fs=1.0 / dt, nperseg=seg, detrend="constant")
+    return welch(signal, fs=1.0 / dt, nperseg=seg, noverlap=noverlap,
+                 detrend="constant")
 
 
 def compute_spanwise_psd(field: np.ndarray, dt: float,
-                         nperseg: int | None = None
+                         nperseg: int | None = None,
+                         noverlap: int | None = None,
                          ) -> tuple[np.ndarray, np.ndarray]:
     """PSD at every spanwise station at once (vectorised Welch).
 
@@ -70,6 +75,7 @@ def compute_spanwise_psd(field: np.ndarray, dt: float,
     dt : float
         Sample interval [s].
     nperseg : see :func:`compute_psd` (defaults to the full record).
+    noverlap: see :func:`compute_psd` (defaults to the half of nperseg).
 
     Returns
     -------
@@ -77,7 +83,8 @@ def compute_spanwise_psd(field: np.ndarray, dt: float,
     psd_map : (n_stations, n_freqs)
     """
     seg = _segment_length(field.shape[-1], nperseg)
-    return welch(field, fs=1.0 / dt, axis=-1, nperseg=seg, detrend="constant")
+    return welch(field, fs=1.0 / dt, axis=-1, nperseg=seg, noverlap=noverlap,
+                 detrend="constant")
 
 
 def compute_spanwise_phase(field: np.ndarray, dt: float
@@ -111,7 +118,8 @@ def compute_spanwise_phase(field: np.ndarray, dt: float
 
 
 def compute_spanwise_amplitude(field: np.ndarray, dt: float,
-                               nperseg: int | None = None
+                               nperseg: int | None = None,
+                               noverlap: int | None = None
                                ) -> tuple[np.ndarray, np.ndarray]:
     """One-sided *peak amplitude* spectrum at every spanwise station.
 
@@ -137,6 +145,8 @@ def compute_spanwise_amplitude(field: np.ndarray, dt: float,
         reading the amplitude off a single FFT, which is exact for this
         dataset's forcing harmonics because the record spans an exact number
         of forcing periods.
+    noverlap: int, optional
+        Welch segment overlap length. ``None`` uses nperseg // 2.
 
     Returns
     -------
@@ -146,7 +156,8 @@ def compute_spanwise_amplitude(field: np.ndarray, dt: float,
     """
     seg = _segment_length(field.shape[-1], nperseg)
     freqs, Pxx_spec = welch(field, fs=1.0 / dt, axis=-1, nperseg=seg,
-                            detrend="constant", scaling="spectrum")
+                            noverlap=noverlap, detrend="constant",
+                            scaling="spectrum")
 
     rms_amp = np.sqrt(Pxx_spec)
     peak_amp = rms_amp * np.sqrt(2.0)
