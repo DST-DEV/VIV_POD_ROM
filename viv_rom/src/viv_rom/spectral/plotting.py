@@ -72,9 +72,16 @@ def plot_spanwise_map(y: np.ndarray, t: np.ndarray,
 
     for ax, (key, data) in zip(axes, components.items()):
         freqs, psd_map = compute_spanwise_psd(data, dt, nperseg)
+
+        # Filter for selected frequency range
         keep = freqs <= f_max
+        psd_map = psd_map[:, keep]
+
+        # Filter out near zero values
+        psd_map = np.where(psd_map >= 1e-30, psd_map, np.nan)
+
         pcm = ax.pcolormesh(y, freqs[keep],
-                            np.log10(psd_map[:, keep].T + 1e-30),
+                            np.log10(psd_map.T),
                             shading="auto", cmap="magma")
         for h in range(1, n_harmonics + 1):
             ax.axhline(h * f_forcing, color="cyan", ls="--", lw=0.8)
@@ -252,8 +259,8 @@ def plot_cycle_energy(cycle: CycleEnergy, stations: Sequence[int]) -> Figure:
     """Energy injected per forcing cycle: history and spanwise spread.
 
     Left: whole-blade and selected-station energy per cycle, each relative to
-    its own mean (stations with negligible injection are skipped). Right: spanwise mean energy per cycle with
-    its +-1 std band over cycles.
+    its own mean (stations with negligible injection are skipped).
+    Right: spanwise mean energy per cycle with its +-1 std band over cycles.
     """
     stats = cycle.station_stats
     tot = cycle.total_stats

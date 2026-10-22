@@ -204,9 +204,9 @@ def spectral_summary_text(result: SpectralAnalysisResult,
              f"{len(result.t)} snapshots spanning ~{result.n_periods:.1f} "
              f"forcing periods"]
     lines += ["",
-             "--- Dominant frequencies by station ---",
-             f"{'component':>9} {'station':>9} {'y [m]':>8} "
-             f"{'f_peak [Hz]':>12} {'f/f_forcing':>12}"]
+              "--- Dominant frequencies by station ---",
+              f"{'component':>9} {'station':>9} {'y [m]':>8} "
+              f"{'f_peak [Hz]':>12} {'f/f_forcing':>12}"]
     # for key, peaks in result.station_peaks.items():
     #     for st, f_peak in zip(station_idxs, peaks):
     #         lines.append(f"{key:>9} {st:9d} {result.y[st]:8.1f} "
@@ -269,7 +269,8 @@ def write_figures(result: SpectralAnalysisResult, config: SpectralConfig,
                   labels=labels)
 
     figures = {"01_station_psd": plotting.plot_station_psd(
-        y, t, components, result.station_idxs, nperseg=config.nperseg, **common)}
+        y, t, components, result.station_idxs, nperseg=config.nperseg,
+        **common)}
 
     if config.do_spanwise_map:
         figures["02_spanwise_psd_map"] = plotting.plot_spanwise_map(
