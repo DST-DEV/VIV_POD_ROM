@@ -12,8 +12,8 @@ Pellegrino & Meskell, 2013, per unit span). ``U`` is the *nominal* wind
 speed: it is not reduced by the inclination angle.
 
 ``St`` is not one number but a range. Pellegrino & Meskell found
-``0.11 < St < 0.16`` for the NREL S809 airfoil in 2D flow at ``Re = 1e6``
-and high angles of attack. That does not transfer directly to other
+``0.11 < St < 0.13`` for the NREL S809 airfoil in 2D flow at ``Re = 1e6``
+and high angles of attack near 90°. That does not transfer directly to other
 airfoils and 3D flow, but the range is used nonetheless for an estimate of a
 *band* of shedding frequencies per station, ``[St_low U / D, St_high U / D]``,
 to be compared with the forcing (= natural) frequency ``f_n``.
@@ -32,7 +32,7 @@ import numpy as np
 
 from viv_rom.domain.frames import InflowAlignedFrame
 
-STROUHAL_RANGE = (0.11, 0.16)
+STROUHAL_RANGE = (0.11, 0.13)
 LOCK_IN_BAND = (0.8, 1.1)
 
 
