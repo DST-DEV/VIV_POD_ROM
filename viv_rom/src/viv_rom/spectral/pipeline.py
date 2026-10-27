@@ -22,7 +22,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from viv_rom.domain.data import ForceFieldFile
-from viv_rom.domain.frames import ForceFrame, InflowAlignedFrame, make_frame
+from viv_rom.domain.frames import (
+    ForceFrame,
+    make_frame,
+    InflowAlignedFrame,
+    RelativeInflowFrame,
+    transform_forces
+)
 from viv_rom.io.results.export import save_result
 from viv_rom.loading import load_case
 from viv_rom.spectral import plotting
@@ -76,7 +82,8 @@ class SpectralAnalysisResult:
 
     def components(self, field: str = "both") -> dict[str, np.ndarray]:
         """Forces in the analysis frame, ``{key: (n_stations, n_steps)}``."""
-        all_components = self.frame.transform(self.y, self.Fx, self.Fz)
+        all_components = transform_forces(self.frame, self.y, self.Fx, self.Fz,
+                                          self.t)
         return select_components(field, all_components)
 
     @property
@@ -105,7 +112,8 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
     frame = config.frame_instance()
     components = select_components(
         config.field,
-        frame.transform(y, force_file.data.Fx, force_file.data.Fz))
+        transform_forces(frame, y, force_file.data.Fx, force_file.data.Fz,
+                         t))
 
     n_sections = len(y)
     station_idxs = None
@@ -155,7 +163,7 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
             vz=config.motion.velocity("z", y, t, amplitude, omega),
             y=y, t=t, f_forcing=config.f_forcing)
 
-    shedding = estimate_shedding(config, y, frame) \
+    shedding = estimate_shedding(config=config, y=y, t=t, frame=frame) \
         if config.do_shedding else None
 
     return SpectralAnalysisResult(
@@ -166,7 +174,7 @@ def analyse(config: SpectralConfig) -> SpectralAnalysisResult:
         shedding=shedding)
 
 
-def estimate_shedding(config: SpectralConfig, y: np.ndarray,
+def estimate_shedding(config: SpectralConfig, y: np.ndarray, t: np.ndarray,
                       frame: ForceFrame | None = None
                       ) -> SheddingFrequencies | None:
     """Shedding band per station for the case's inflow (nominal wind speed).
@@ -175,13 +183,13 @@ def estimate_shedding(config: SpectralConfig, y: np.ndarray,
     frame of the case (pitch, inclination, ``blade_file``). Returns ``None``
     with a warning if the blade file does not exist.
     """
-    if not isinstance(frame, InflowAlignedFrame):
+    if not isinstance(frame, (InflowAlignedFrame)):
         frame = make_frame("inflow", config.motion, pitch=config.pitch,
                            inclination=config.inclination,
                            blade_file=config.blade_file)
     try:
         return shedding_frequencies(
-            frame, y, wind_speed=config.wind_speed,
+            frame=frame, y=y, t=t, wind_speed=config.wind_speed,
             f_forcing=config.f_forcing, strouhal=config.strouhal_range,
             lock_in_band=config.lock_in_band)
     except FileNotFoundError as err:

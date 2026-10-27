@@ -179,6 +179,25 @@ Results: `result.energy` (`.n_required`, `.modes`, `.mode_totals`,
         frame = InflowAlignedFrame(pitch=85, inclination=50)
         frame.angle_of_attack(y)         # rad, per station
         viv spectral ... --frame inflow --field flift
+* **Relative-inflow frame** (`--frame rel_inflow`, components `fd_rel` /
+  `fl_rel`). Like the inflow frame, but the air is taken relative to the
+  *moving* section: `w(y, t) = U cos(i) d - v(y, t)` with `d` the static flow
+  direction and `v` the prescribed section velocity (`A omega phi(y)
+  cos(omega t)`, the same velocity used for power and energy injection).
+  `(Fx, Fz)` is resolved along / normal to `w` with the angle
+  `phi_rel(y, t) = atan2(w_z, w_x)`, so the rotation depends on span *and*
+  time. Helpers: `frame.relative_velocity(y, t)`, `relative_speed`,
+  `flow_angle`, `angle_shift` (`phi_rel - phi`), `angle_of_attack(y, t)` and
+  `projected_width(y, t)` (`c |sin alpha_eff|`). It uses the case's wind
+  speed, motion amplitude and forcing frequency; with amplitude 0 it equals
+  the inflow frame. Because the rotation oscillates at the forcing
+  frequency, a harmonic force acquires sum / difference frequencies in this
+  frame (e.g. shedding frequency +/- forcing frequency): it is meant for
+  looking at the load relative to the instantaneous flow, not as a drop-in
+  for the phase / energy analyses of the static frames. Frames are applied
+  through `viv_rom.domain.frames.transform_forces(frame, y, Fx, Fz, t)`,
+  which hands `t` only to frames with `time_dependent = True`; the
+  wind-speed sweep builds the frame for each speed.
 
 * **Force at the forcing frequency** (`spectral/forcing_response.py`,
   `--response-harmonics H`, `--no-forcing-response`). Joint least-squares

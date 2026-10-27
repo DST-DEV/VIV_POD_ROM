@@ -32,13 +32,18 @@ class SpectralConfig(CaseConfig):
         ``"blade"`` (the CFD ``Fx``/``Fz``), ``"motion"`` (default; along /
         normal to the local direction of motion, ``F_par``/``F_perp``),
         ``"inflow"`` (along / normal to the free stream, ``F_D``/``F_L``;
-        uses the case's pitch and inclination and ``blade_file``), or a
+        uses the case's pitch and inclination and ``blade_file``),
+        ``"rel_inflow"`` (like ``"inflow"`` but along / normal to the inflow
+        relative to the moving section, ``F_D,rel``/``F_L,rel``; depends on
+        span and time and also uses the wind speed, motion amplitude and
+        forcing frequency), or a
         :class:`~viv_rom.domain.frames.ForceFrame` instance.
     field : str
         Component(s) analysed station-by-station: ``"both"`` or one of the
         frame's keys (``"fx"``/``"fz"`` in the blade frame,
         ``"fpar"``/``"fperp"`` in the motion frame, ``"fdrag"``/``"flift"``
-        in the inflow frame).
+        in the inflow frame, ``"fd_rel"``/``"fl_rel"`` in the relative-inflow
+        frame).
     stations : tuple of int
         Spanwise station indices for the PSD plots / summary table as a
         percentage of the number of stations (0 = root, 100 = tip).
@@ -134,7 +139,10 @@ class SpectralConfig(CaseConfig):
         if isinstance(self.frame, str):
             return make_frame(self.frame, self.motion, pitch=self.pitch,
                               inclination=self.inclination,
-                              blade_file=self.blade_file)
+                              blade_file=self.blade_file,
+                              wind_speed=self.wind_speed,
+                              amplitude=self.effective_motion_amplitude,
+                              f_forcing=self.f_forcing)
         return self.frame
 
     @property

@@ -1,12 +1,14 @@
 """Wind-speed sweep: dominant response frequency vs. U (lock-in diagram)."""
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
+from viv_rom.domain.frames import transform_forces
 from viv_rom.loading import load_case
 from viv_rom.spectral.config import SpectralConfig
 from viv_rom.spectral.core import (compute_psd,
@@ -37,7 +39,6 @@ def frequency_sweep(config: SpectralConfig) -> SweepResult:
     Loops over ``config.u_sweep_list`` (same case, trimming, frame and
     ``config.sweep_field``) and skips any wind speed whose file is missing.
     """
-    frame = config.frame_instance()
     sweep_field = config.effective_sweep_field
     found: list[int] = []
     f_dom: list[float] = []
@@ -55,7 +56,11 @@ def frequency_sweep(config: SpectralConfig) -> SweepResult:
             continue
 
         data = ff.data
-        component = frame.transform(data.y, data.Fx, data.Fz)[sweep_field]
+        # frames may depend on the wind speed (relative inflow): one per speed
+        frame = dataclasses.replace(config,
+                                    wind_speed=wind_speed).frame_instance()
+        component = transform_forces(frame, data.y, data.Fx, data.Fz,
+                                     data.t)[sweep_field]
         total = integrate_over_span(data.y, component)
         dt = data.t[1] - data.t[0]
         freqs, psd = compute_psd(total, dt, config.nperseg)

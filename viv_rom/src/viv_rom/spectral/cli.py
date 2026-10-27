@@ -21,8 +21,10 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="coordinate frame the forces are rotated into "
                              "before analysis: 'blade' (Fx/Fz), 'motion' "
                              "(along/normal to the local motion, "
-                             "fpar/fperp) or 'inflow' (along/normal to the "
-                             "free stream, fdrag/flift) "
+                             "fpar/fperp), 'inflow' (along/normal to the "
+                             "free stream, fdrag/flift) or 'rel_inflow' "
+                             "(along/normal to the inflow relative to the "
+                             "moving section, fd_rel/fl_rel) "
                              "(default: %(default)s)")
     parser.add_argument("--field", choices=available_fields(),
                         default=d.field,

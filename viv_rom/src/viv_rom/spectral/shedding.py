@@ -163,7 +163,7 @@ class SheddingFrequencies:
 
 
 def shedding_frequencies(frame: InflowAlignedFrame, y: np.ndarray,
-                         wind_speed: float, f_forcing: float,
+                         t: np.ndarray, wind_speed: float, f_forcing: float,
                          strouhal: Sequence[float] = STROUHAL_RANGE,
                          lock_in_band: Sequence[float] = LOCK_IN_BAND
                          ) -> SheddingFrequencies:
@@ -176,6 +176,8 @@ def shedding_frequencies(frame: InflowAlignedFrame, y: np.ndarray,
         (needs the blade geometry).
     y : ndarray, shape (n_stations,)
         Station coordinates [m].
+    y : ndarray, shape (n_time_steps,)
+        Time [s].
     wind_speed : float
         Nominal wind speed [m/s] (not projected by the inclination).
     f_forcing : float
@@ -190,12 +192,12 @@ def shedding_frequencies(frame: InflowAlignedFrame, y: np.ndarray,
     if wind_speed <= 0 or f_forcing <= 0:
         raise ValueError("wind_speed and f_forcing must be positive.")
     y = np.asarray(y, float)
-    width = np.asarray(frame.projected_width(y), float)
+    width = np.asarray(frame.projected_width(y=y, t=t), float)
     with np.errstate(divide="ignore"):
         scale = np.where(width > 0, wind_speed / width, np.inf)
     return SheddingFrequencies(
         y=y, chord=np.asarray(frame.geometry.chord_at(y), float),
-        angle_of_attack=np.asarray(frame.angle_of_attack(y), float),
+        angle_of_attack=np.asarray(frame.angle_of_attack(y=y, t=t), float),
         width=width, wind_speed=float(wind_speed), strouhal=strouhal,
         f_low=strouhal[0] * scale, f_high=strouhal[1] * scale,
         f_forcing=float(f_forcing), lock_in_band=lock_in_band)
