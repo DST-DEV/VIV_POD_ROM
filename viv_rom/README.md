@@ -8,6 +8,7 @@ Methods (one subpackage each):
 | Subpackage | What it does |
 |---|---|
 | `viv_rom.pod` | Proper orthogonal decomposition of the sectional-force distribution, plus a physical power cross-check |
+| `viv_rom.gpod` | Global POD: the snapshots of several simulations (one varying parameter) concatenated in time, one shared basis, leave-one-out validation |
 | `viv_rom.spod` | Spectral POD (Welch/Towne): SPOD modes per frequency, harmonic content, phase-locking to the forced motion, energy injection per mode |
 | `viv_rom.spectral` | Welch PSD per station, frequency-vs-span PSD / amplitude / phase maps, spectrogram, wind-speed sweep (lock-in diagram) |
 
@@ -21,6 +22,8 @@ Methods (one subpackage each):
     viv pod      --data-dir data/archive_1D --case a01_p85_i50 -u 10 --field combined
     viv spectral --data-dir data/archive_1D --case a01_p85_i50 -u 10 --field both
     viv spod     --data-dir data/archive_1D --case a01_p85_i50 -u 10 --field combined
+    viv gpod     --data-dir data/archive_1D --case a01_p85_i50 --u-start 6 --u-stop 22 \
+                 --normalization dynamic_pressure work --loo
     viv pod --help               # all options of a method
 
 Shortcuts `viv-pod`, `viv-spectral` and `viv-spod`, and `python -m viv_rom.pod` /
@@ -113,6 +116,80 @@ Modes, singular values and temporal coefficients live in the normalized space;
 `result.reconstruct(r)` returns the rank-`r` field back in N/m. To add a
 strategy, implement `Normalizer.scales(ctx)` and decorate it with
 `@register_normalizer("name")` -- nothing else changes.
+
+## Global POD over a parameter sweep
+
+`viv_rom.gpod` builds one spatial basis for several simulations by
+**concatenating their snapshot matrices in time** and decomposing the result:
+
+    D_glob = [ sqrt(w_1) D'_1 | sqrt(w_2) D'_2 | ... | sqrt(w_N) D'_N ]
+
+with `D'_c` the normalised, centred snapshot matrix of simulation `c` (exactly
+the preparation of `viv pod`, applied per case) and `w_c` a case weight. This
+is the eigenproblem of the pooled covariance `sum_c w_c D'_c D'_c^T`. The
+time coefficients of a simulation are the projection `a_c(t) = Phi^T D'_c(t)`
+of its own, unweighted data, so every simulation can be reconstructed
+(`result.case(12).reconstruct(r)`, in N/m) and analysed with the single-case
+tools (energy injection, harmonic phase).
+
+    viv gpod --case a01_p85_i50 --u-start 6 --u-stop 22 --u-step 2 \
+             --normalization dynamic_pressure work --centering case --loo
+    viv gpod --case a01_p85_i50 --parameter pitch --values 75 80 85 90
+
+    from viv_rom.gpod import GlobalPODConfig, analyse
+    from viv_rom.pod import PODConfig
+
+    base = PODConfig.from_case("a01_p85_i50", data_dir="data/archive_1D",
+                               normalization=("dynamic_pressure", "work"))
+    result = analyse(GlobalPODConfig(base=base, parameter="wind_speed",
+                                     values=range(6, 23)))
+    result.relative_error      # (n_cases, n_modes) error vs. modes kept
+    result.mode_share          # share of each case's energy in each global mode
+    result.case(12).energy     # EnergyInjection of the 12 m/s case, global modes
+    result.angles              # principal angles between local subspaces
+
+The decisions that matter, all options of `GlobalPODConfig` / `viv gpod`:
+
+| option | choices | notes |
+|---|---|---|
+| `normalization` (of `base`) | as for `viv pod` | applied **per case**, with that case's wind speed. Without it the energy scales like `U^2` and the highest speeds dominate the basis. `work` is the same for all `U`, so all cases share one inner product |
+| `centering` | `case` (default), `global`, `none` | `case`: each simulation's own mean is removed, the modes describe fluctuations and the mean field must be modelled separately. `global`: one common mean (average of the case means), the case-to-case mean differences then occupy modes. `none`: nothing removed |
+| `weighting` | `time_average` (default), `snapshots`, `unit_energy` | weight `w_c` of a case: `1/n_c` (every case contributes its time-averaged covariance), `1` (plain concatenation: longer records dominate), `1/norm(D'_c)^2` (all cases equally energetic). Weights only select the basis |
+| `whole_periods`, `n_periods` | `True`, `None` | crop every case to a whole number of forcing periods (oldest samples dropped), or to exactly the last `n` periods. A partial cycle biases the mean and the energy integral |
+| `n_skip_overrides` | `{value: rows}` | per-value initial transient (a longer one at low wind speed, say) |
+| `n_modes_keep` | `None` | truncate the basis |
+
+Per case the result also holds the **local POD** (`compute_local`), i.e. what
+`viv pod` gives for that simulation alone: modes needed for 99 % of the energy
+and for the energy-injection tolerance, with the global basis and locally,
+plus the principal angles between the leading `angle_modes`-dimensional local
+subspaces of neighbouring simulations and to the global basis. Small angles
+mean one basis can represent both; they are a cheap predictor of how many
+global modes are needed.
+
+**Leave-one-out** (`--loo`, `leave_one_out(config)`): each simulation is
+projected onto a basis fitted *without* it. This is the number to quote for
+"how well does the global basis represent an unseen condition"; the in-sample
+error of a case that helped to build the basis is optimistic. A held-out
+case is centred like the training cases (`case`: its own mean, i.e. the mean
+is assumed to be modelled separately; `global`: the training mean).
+`--loo-energy` adds the energy-injection analysis of the held-out cases
+(slow: one analysis per case; `--energy-max-modes N` limits its cost).
+
+Output in the output folder (`results/<case>/gpod_<parameter>` by default):
+`gpod_summary.txt`, `gpod_results.npz` (reload with `load_result`;
+`--no-export-raw` for a small file), `gpod_loo_results.npz` and
+`01_energy_spectrum`, `02_spatial_modes`, `03_reconstruction_error`
+(in-sample and leave-one-out), `04_modes_required`, `05_mode_share`,
+`06_subspace_angles`, `07_mode_energy_injection` (energy injected per global
+mode versus the parameter), `08_harmonic_response` (amplitude and phase of the
+leading coefficients at the forcing frequency versus the parameter).
+
+Things to keep in mind when reading the results:
+
+* Modes and errors live in the *normalised* space; `reconstruct` returns N/m.
+* The time coefficients of a case are *not* sortable by energy: the modes are
+  ordered by pooled energy, and `case.pod.energy_frac` is that case's share.
 
 ## Energy injection and harmonic phase
 
@@ -301,6 +378,7 @@ SPOD mode, whereas the real POD of the same data needs several.
       io/       cfd_reader, export               Load .1HY files, save/load results (.npz)
       pod/      config core normalization preprocessing energy_injection phase
                 power plotting pipeline cli
+      gpod/     config snapshots core analysis plotting pipeline cli
       spectral/ config core forcing_response cycle_energy shedding plotting sweep
                 pipeline cli
       spod/     config weights blocks core locking injection analysis plotting

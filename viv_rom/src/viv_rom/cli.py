@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 
+from viv_rom.gpod import cli as gpod_cli
 from viv_rom.pod import cli as pod_cli
 from viv_rom.spectral import cli as spectral_cli
 from viv_rom.spod import cli as spod_cli
@@ -15,6 +16,9 @@ from viv_rom.spod import cli as spod_cli
 METHODS = {
     "pod": (pod_cli,
             "proper orthogonal decomposition of the sectional forces"),
+    "gpod": (gpod_cli,
+             "global POD of the time-concatenated snapshots of a "
+             "parameter sweep"),
     "spectral": (spectral_cli,
                  "PSD / phase / spectrogram / lock-in analysis"),
     "spod": (spod_cli,

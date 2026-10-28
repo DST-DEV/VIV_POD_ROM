@@ -62,7 +62,7 @@ class CaseConfig:
     pitch: int = 85
     inclination: int = 50
     wind_speed: int = 10
-    n_skip: int = 1200
+    n_skip: int = 400
     n_last: int | None = None
     y_root: float | None = 2.8
     f_forcing: float = 0.624
