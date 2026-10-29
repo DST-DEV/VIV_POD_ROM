@@ -18,6 +18,11 @@ class PlotMetric(Enum):
     POWER = "power"
 
 
+class AbscissaMetric(Enum):
+    TIME = "Time [s]"
+    PERIOD = "Forcing period"
+
+
 @dataclass
 class Case:
     """One time series, fully specified by the parameters of a .1HY file."""
@@ -25,7 +30,7 @@ class Case:
     inclination: float
     wind_speed: float  # free-stream wind speed [m/s]
     amplitude: float = 1  # forced motion amplitude factor
-    f_forcing: float = 0.624  # [Hz]
+    f_forcing: float = .624  # [Hz]
     label: str | None = None  # legend label (auto-generated if None)
 
     def __post_init__(self):
@@ -58,23 +63,27 @@ DATA_DIR = Path("./data/archive_1D")  # folder containing the *.1HY files
 N_SKIP = 200
 
 # Add one Case per line to be shown in each axis
+F_FORCING = .624  # [Hz]
 CASES = [
     Case(pitch=85, inclination=50, wind_speed=6, amplitude=1,
-         f_forcing=0.624),
+         f_forcing=F_FORCING),
     Case(pitch=85, inclination=50, wind_speed=10, amplitude=1,
-         f_forcing=0.624),
+         f_forcing=F_FORCING),
     Case(pitch=85, inclination=50, wind_speed=18, amplitude=1,
-         f_forcing=0.624),
+         f_forcing=F_FORCING),
     Case(pitch=85, inclination=50, wind_speed=22, amplitude=1,
-         f_forcing=0.624),
+         f_forcing=F_FORCING),
 ]
 
 ALIGN_FRAME = True
 REMOVE_MEAN = False
 NORMALIZE_ANIMATION = True
 PLOTMETRIC = PlotMetric.POWER
+ABSCISSA_METRIC = AbscissaMetric.TIME
 PLOT_CONTOURS = True  # one contour figure (2 axes) per case
+N_LEVELS = 50  # Number of levels for the contour plot
 CENTER_CONTOURS_AT_ZERO = True  # Whether to center the colormap for the contours at zero
+CONTOURS_EQUAL_LIMS = False  # Whether the positive and negative cbar lims of the contour plot should be equal
 OUTPUT_DIR = Path(__file__).parent / "results"
 SAVE_FIGS = True
 
@@ -158,7 +167,16 @@ if PLOT_CONTOURS:
         else:
             fig_cont, ax_cont = plt.subplots(figsize=(16, 7), ncols=2)
         fig_cont.suptitle(case.label)
-        Y, T = np.meshgrid(data.y, data.t)
+        if ABSCISSA_METRIC is AbscissaMetric.TIME:
+            Y, X = np.meshgrid(data.y, data.t)
+            xticks = None
+        elif ABSCISSA_METRIC is AbscissaMetric.PERIOD:
+            period_len = 1 / F_FORCING
+            period_fraction = data.t / period_len
+            Y, X = np.meshgrid(data.y, period_fraction)
+            xticks = np.arange(period_fraction[0], period_fraction[-1]+.1, 1)
+        else:
+            raise ValueError("Invalid abscissa metric.")
 
         line_data = (ld1, ld2)
         for idx_ax, ax in enumerate(ax_cont):
@@ -168,17 +186,25 @@ if PLOT_CONTOURS:
             if np.nanmin(Z) == np.nanmax(Z):
                 continue
 
+            vmin = np.floor(np.nanmin(Z) / 10) * 10
+            vmax = np.ceil(np.nanmax(Z) / 10) * 10
             if CENTER_CONTOURS_AT_ZERO:
-                norm = mpl.colors.TwoSlopeNorm(vmin=np.nanmin(Z),
-                                               vcenter=0,
-                                               vmax=np.nanmax(Z))
+                if CONTOURS_EQUAL_LIMS:
+                    vmax = np.nanmax([np.abs(vmin), np.abs(vmax)])
+                    vmin = -vmax
+
+                norm = mpl.colors.TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
                 cmap_contourf = cmap_diverging
             else:
                 norm = None
                 cmap_contourf = "inferno"
-            CS = ax.contourf(T, Y, Z, 50, cmap=cmap_contourf, norm=norm)
+            levels = np.linspace(vmin, vmax, N_LEVELS+1)
+            CS = ax.contourf(X, Y, Z, levels=levels, cmap=cmap_contourf,
+                             norm=norm)
 
-            ax.set_xlabel("Time [s]")
+            ax.set_xlabel(ABSCISSA_METRIC.value)
+            if xticks is not None:
+                ax.set_xticks(xticks)
             ax.set_ylabel("y [m]")
 
             divider = make_axes_locatable(ax)
@@ -186,6 +212,19 @@ if PLOT_CONTOURS:
 
             cbar = fig_cont.colorbar(CS, cax=cax, orientation='vertical')
             cbar.ax.set_ylabel(labels[idx_ax] + " " + lines_unit)
+
+            # Set ticks for colorbar
+            cbar_mag_log = np.log10(max(abs(vmin), abs(vmax)))
+            if cbar_mag_log-int(cbar_mag_log) >= .35:
+                cbar_tick_step = 10**int(cbar_mag_log)
+            else:
+                cbar_tick_step = 2 * 10**(int(cbar_mag_log) - 1)  # 20 steps
+
+            cbar_ticks = np.arange(
+                np.ceil(vmin / cbar_tick_step) * cbar_tick_step,
+                np.floor(vmax / cbar_tick_step) * cbar_tick_step + 1e-3,
+                cbar_tick_step)
+            cbar.set_ticks(cbar_ticks)
 
         if len(ax_cont) == 1:
             fig_cont.subplots_adjust(left=0.1, right=0.9,

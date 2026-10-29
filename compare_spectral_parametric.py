@@ -387,16 +387,18 @@ def plot_shedding_frequency_mesh(sheddings: dict[int, SheddingFrequencies],
         for i in range(len(wind_speeds)):
             inter_1 = intersection(X[i, :], Z[i, :],
                                    X[i, :], np.full_like(X[i, :], 0.05))
-            span_lock_1.append(inter_1[0][-1] if len(inter_1[0])>0 else np.nan)
+            span_lock_1.append(inter_1[0][-1]
+                               if len(inter_1[0]) > 0 else np.nan)
 
             inter_2 = intersection(X[i, :], Z[i, :],
                                    X[i, :], np.full_like(X[i, :], 1.0))
-            span_lock_2.append(inter_2[0][-1] if len(inter_2[0])>0 else np.nan)
+            span_lock_2.append(inter_2[0][-1]
+                               if len(inter_2[0]) > 0 else np.nan)
     elif SHEDDING_PLOT_MODE is SheddingPlotMode.POT_LOCK_IN:
-        Z = np.zeros(len(sheddings),
-                     len(sheddings[wind_speeds[0]].f_low)
+        Z = np.zeros((len(sheddings),
+                     len(sheddings[wind_speeds[0]].f_low))
                      )  # shape = (n_wind, n_sections)
-        for i, shedding in sheddings.values():
+        for i, shedding in enumerate(sheddings.values()):
             Z[i, shedding.possible_lock_in] = 1
     else:
         raise ValueError("Invalid shedding frequency plot mode "
