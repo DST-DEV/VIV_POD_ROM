@@ -11,9 +11,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm, colors
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 
 from viv_rom.gpod.analysis import (GlobalPODResult, LeaveOneOutResult,
                                    SubspaceAngles)
+from viv_rom.signal_utils import dominant_frequency
 
 
 def _value_colors(values: np.ndarray):
@@ -210,4 +212,99 @@ def plot_harmonic_response(result: GlobalPODResult) -> Figure:
         ax.grid(alpha=.8, zorder=0)
         ax.legend(fontsize=8)
     fig.tight_layout()
+    return fig
+
+
+def plot_temporal_spectra(result: GlobalPODResult, n_show: int = 4,
+                          n_harmonics: int = 6,
+                          f_forcing: float | None = None,
+                          log_amplitude: bool = True) -> Figure:
+    """Amplitude spectra of the leading global temporal coefficients.
+
+    One subplot per global mode, one line per simulation (coloured by the
+    sweep parameter). The coefficients are the projections ``a_k(t)`` of each
+    simulation onto the global mode. The forcing frequency and its harmonics
+    are marked by red dashed lines, the dominant (non-zero) peak of every
+    simulation by a dot.
+
+    Parameters
+    ----------
+    result : GlobalPODResult
+    n_show : int
+        Number of leading global modes (subplots).
+    n_harmonics : int
+        Harmonics of the forcing frequency that are marked; the frequency
+        axis extends at least to the last one.
+    f_forcing : float, optional
+        Forcing frequency [Hz] (default: that of the simulations).
+    log_amplitude : bool
+        Logarithmic amplitude axis (default), so that the weak lines next to
+        the locked fundamental stay visible.
+
+    Notes
+    -----
+    The amplitude is ``2 |rfft(a_k - mean)| / n``, the peak amplitude of a
+    sinusoid in the units of the (normalised) coefficients. This differs from
+    the single-case plot, which shows the unscaled ``|rfft|`` and therefore
+    depends on the record length; the simulations of a sweep may differ in
+    length.
+    """
+    cases = result.cases
+    n_show = min(n_show, *(c.pod.time_coeff.shape[0] for c in cases))
+    if f_forcing is None:
+        f_forcing = cases[0].config.f_forcing
+    cols, mappable = _value_colors(result.values)
+
+    # spectra[k][i] = (freqs, amplitude, dominant frequency) of case i, mode k
+    spectra = [[] for _ in range(n_show)]
+    for c in cases:
+        for k in range(n_show):
+            a_k = c.pod.time_coeff[k]
+            f_dom, freqs, amp = dominant_frequency(a_k, c.dt)
+            spectra[k].append((freqs, 2.0 * amp / len(a_k), f_dom))
+
+    f_dom_max = max(f for k in range(n_show) for _, _, f in spectra[k])
+    x_max = max(n_harmonics * f_forcing, 1.2 * f_dom_max, 1e-6)
+
+    fig, axes = plt.subplots(n_show, 1, figsize=(9, 2.4 * n_show),
+                             sharex=True, squeeze=False,
+                             layout="constrained")
+    for k in range(n_show):
+        ax = axes[k, 0]
+        for i in range(1, n_harmonics + 1):
+            ax.axvline(i * f_forcing, color="r", ls="--", lw=1, zorder=1)
+        for col, (freqs, amp, f_dom) in zip(cols, spectra[k]):
+            ax.plot(freqs[1:], amp[1:], color=col, lw=1.1, zorder=2)
+            j = int(np.argmin(np.abs(freqs - f_dom)))
+            ax.plot(f_dom, amp[j], "o", ms=4, color=col, mec="k", mew=.6,
+                    zorder=3)
+
+        ax.set_xlim(0, x_max)
+        in_window = np.concatenate([amp[(f > 0) & (f <= x_max)]
+                                    for f, amp, _ in spectra[k]])
+        top = in_window.max()
+        if log_amplitude:
+            ax.set_yscale("log")
+            floor = in_window[in_window > 0].min() if np.any(
+                in_window > 0) else top
+            # keep numerically empty bins from stretching the axis
+            ax.set_ylim(max(floor, 1e-6 * top) / 1.5, 1.5 * top)
+        else:
+            ax.set_ylim(0, 1.05 * top)
+        ax.set_ylabel(f"Amplitude of $a_{{{k + 1}}}$")
+        ax.set_title(f"Global mode {k + 1} "
+                     f"({100 * result.basis.energy_frac[k]:.1f}% of the "
+                     "pooled energy)", fontsize=10)
+        ax.grid(alpha=.8, zorder=0)
+
+    axes[0, 0].legend(handles=[
+        Line2D([], [], color="r", ls="--", lw=1,
+               label=f"Forcing frequency and harmonics "
+                     f"({f_forcing:.3f} Hz)"),
+        Line2D([], [], marker="o", ls="", ms=4, color="gray", mec="k",
+               mew=.6, label="Dominant peak of each simulation")],
+        fontsize=7, loc="upper right")
+    axes[-1, 0].set_xlabel("Frequency [Hz]")
+    fig.colorbar(mappable, ax=axes.ravel().tolist(),
+                 label=_label(result.parameter))
     return fig

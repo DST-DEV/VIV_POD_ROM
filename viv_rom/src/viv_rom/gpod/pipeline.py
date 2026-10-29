@@ -195,6 +195,9 @@ def write_figures(result: GlobalPODResult, config: GlobalPODConfig,
     if any(c.phases is not None for c in result.cases):
         figures["08_harmonic_response"] = (
             lambda: plotting.plot_harmonic_response(result))
+    figures["09_temporal_spectra"] = (
+        lambda: plotting.plot_temporal_spectra(
+            result, n_show=base.n_modes_show, f_forcing=base.f_forcing))
 
     paths = []
     for name, make in figures.items():

@@ -183,7 +183,11 @@ Output in the output folder (`results/<case>/gpod_<parameter>` by default):
 (in-sample and leave-one-out), `04_modes_required`, `05_mode_share`,
 `06_subspace_angles`, `07_mode_energy_injection` (energy injected per global
 mode versus the parameter), `08_harmonic_response` (amplitude and phase of the
-leading coefficients at the forcing frequency versus the parameter).
+leading coefficients at the forcing frequency versus the parameter) and
+`09_temporal_spectra` (amplitude spectrum of the temporal coefficients of the
+first `n_modes_show` global modes, one subplot per mode and one line per
+simulation, with the forcing frequency, its harmonics and each simulation's
+dominant peak marked).
 
 Things to keep in mind when reading the results:
 
